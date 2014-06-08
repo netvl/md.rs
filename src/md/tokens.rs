@@ -1,22 +1,25 @@
+pub type Document = Vec<Block>;
 
-pub enum TopLevel {
+pub type Text = Vec<Inline>;
+
+pub enum Block {
     Heading {
         pub level: int,
-        pub content: Vec<InlineToken>
+        pub content: Text
     },
     
-    BlockQuote(Vec<String>),  // TODO: maybe Vec<String>?
+    BlockQuote(Document),
 
     BlockCode {
         pub tag: Option<String>,
         pub content: Vec<String>
     },
 
-    OrderedList(Vec<Vec<TopLevel>>),
+    OrderedList(Vec<Document>),
 
-    UnorderedList(Vec<Vec<TopLevel>>),
+    UnorderedList(Vec<Document>),
 
-    Paragraph(Vec<InlineToken>),
+    Paragraph(Text),
 
     HorizontalRule,
 
@@ -27,19 +30,19 @@ pub enum TopLevel {
     }
 }
 
-pub enum InlineToken {
+pub enum Inline{
     LineBreak,
 
-    Text(String),
+    Chunk(String),
 
-    Emphasis(String),
+    Emphasis(Text),
 
-    MoreEmphasis(String),
+    MoreEmphasis(Text),
 
     Code(String),
 
     InlineLink {
-        pub title: Option<String>,  // None for automatic links
+        pub title: Option<Text>,  // None for automatic links
         pub link: String
     },
 
