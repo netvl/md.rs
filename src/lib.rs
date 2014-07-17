@@ -1,5 +1,3 @@
-#![crate_id = "md#0.1"]
-#![crate_type = "rlib"]
 #![feature(struct_variant, globs, macro_rules)]
 
 use std::io;
@@ -26,14 +24,14 @@ impl Buf {
         Buf { data: Vec::new(), pos: 0 }
     }
 
-    fn read_from<R: Reader>(&mut self, source: R) -> io::IoResult<u8> {
+    fn read_from<R: Reader>(&mut self, source: &mut R) -> io::IoResult<u8> {
         if self.pos < self.data.len() {
-            let ch = *self.buf.get(self.pos);
+            let ch = *self.data.get(self.pos);
             self.pos += 1;
             Ok(ch)
         } else {
             source.read_byte().map(|c| { 
-                self.buf.push(c);
+                self.data.push(c);
                 self.pos += 1;
                 c
             })
@@ -45,21 +43,27 @@ impl Buf {
     }
     
     fn consume(&mut self) {
-        self.buf.clear();
+        self.data.clear();
         self.pos = 0;
     }
 }
 
-struct BufferStack {
+struct BufStack {
     bufs: Vec<Buf>
 }
 
-impl Buf {
+impl BufStack {
     #[inline]
-    fn new() -> BufferStack { BufferStack { bufs: Vec::new() } }
+    fn new() -> BufStack { BufStack { bufs: Vec::new() } }
 
     fn push_new(&mut self) {
         self.bufs.push(Buf::new());
+    }
+
+    #[inline]
+    fn peek<'a>(&'a mut self) -> &'a mut Buf {
+        assert!(self.bufs.len() > 0);
+        self.bufs.mut_last().unwrap()
     }
 
     fn pop(&mut self) {
@@ -69,32 +73,30 @@ impl Buf {
 
     fn rewind(&mut self) {
         assert!(self.bufs.len() > 0);
-        self.bufs.last_mut().unwrap().rewind();
+        self.bufs.mut_last().unwrap().rewind();
     }
 
     fn consume(&mut self) {
         assert!(self.bufs.len() > 0);
-        self.bufs.last_mut().unwrap().consume();
+        self.bufs.mut_last().unwrap().consume();
     }
 
-    fn read_from<R: Reader>(&mut self, source: R) -> io::IoResult<u8> {
+    fn read_from<R: Reader>(&mut self, source: &mut R) -> io::IoResult<u8> {
         assert!(self.bufs.len() > 0);
-        self.bufs.last_mut().unwrap().read_from(source)
+        self.bufs.mut_last().unwrap().read_from(source)
     }
 }
 
 pub struct MarkdownParser<R> {
     source: R,
-    stack: BufferStack
+    stack: BufStack
 }
 
 impl<R: Reader> MarkdownParser<R> {
-    pub fn new(re: B) -> MarkdownParser<B> {
+    pub fn new(r: R) -> MarkdownParser<R> {
         MarkdownParser {
-            source: buffer,
-
-            buf: Vec::new(),
-            pos: 0
+            source: r,
+            stack: BufStack::new()
         }
     }
     
@@ -116,16 +118,16 @@ impl<R: Reader> Iterator<Block> for MarkdownTokens<R> {
 
 macro_rules! first_of(
     ($e:expr) => ($e);
-    ($e:expr or $($more:expr),+) => (
-        $e.or_else(|| try_parse!($($more),+))
+    ($e:expr or $f:expr $(or $more:expr)*) => (
+        $e.or_else(|| first_of!($f $(or $more)*))
     )
 )
 
-macro_rules! try_(
-    ($e:expr) => (
+macro_rules! try_bt(
+    ($_self:ident; $e:expr) => (
         match $e {
             Some(result) => Some(result),
-            None => { self.backtrack(); None }
+            None => { $_self.backtrack(); return None }
         }
     )
 )
@@ -133,7 +135,6 @@ macro_rules! try_(
 impl<R: Reader> MarkdownParser<R> {
     pub fn read_while_possible(&mut self) -> (Document, Option<MarkdownError>) {
         let mut result = Vec::new();
-        let mut error = None;
         loop {
             match self.next() {
                 Success(token) => result.push(token),
@@ -160,8 +161,8 @@ impl<R: Reader> MarkdownParser<R> {
         self.stack.pop();
     }
 
-    fn read_byte(&mut self) -> io::IoResult<char> {
-        self.stack.read_from(&mut self.source)
+    fn read_byte(&mut self) -> MarkdownResult<u8> {
+        result::from_io(self.stack.read_from(&mut self.source))
     }
 
     fn consume(&mut self) {
@@ -169,7 +170,7 @@ impl<R: Reader> MarkdownParser<R> {
     }
 
     fn backtrack(&mut self) {
-        self.stack.backtrac();
+        self.stack.rewind();
     }
     
     fn parse_block(&mut self) -> MarkdownResult<Block> {
@@ -182,19 +183,20 @@ impl<R: Reader> MarkdownParser<R> {
             self.unordered_list() or
             self.paragraph()
         };
-        block.or(|| parse_error("a block"))
+        block.unwrap_or_else(|| self.parse_error("a block"))
     }
 
     fn block_quote(&mut self) -> Option<MarkdownResult<Block>> {
-        let mut blocks = Vec::new();
-        let mut lines = Vec::new();
+        //let mut blocks = Vec::new();
+        //let mut lines = Vec::new();
         loop {
-            try_!(self.skip_initial_spaces());
-            match self.skip_char('>') {
-            }
+            try_bt!(self; self.skip_initial_spaces());
         }
     }
 
+    fn skip_initial_spaces(&mut self) -> Option<MarkdownResult<()>> {
+        None
+    }
 
     fn block_code(&mut self) -> Option<MarkdownResult<Block>> {
         None
@@ -226,7 +228,7 @@ impl<R: Reader> MarkdownParser<R> {
     }
 
 
-    fn parse_error(&mut self, what: &str) -> Option<MarkdownResult<Block>> {
-        Some(parse_error!("unable to parse {}, buffer contents: {}", what, self.buf))
+    fn parse_error(&mut self, what: &str) -> MarkdownResult<Block> {
+        parse_error!("unable to parse {}; current buffer contents: {}", what, self.stack.peek().data)
     }
 }
