@@ -38,6 +38,11 @@ impl Buf {
         }
     }
 
+    fn unread(&mut self, n: uint) {
+        assert!(n <= self.pos);
+        self.pos -= n;
+    }
+
     fn rewind(&mut self) {
         self.pos = 0;
     }
@@ -84,6 +89,11 @@ impl BufStack {
     fn read_from<R: Reader>(&mut self, source: &mut R) -> io::IoResult<u8> {
         assert!(self.bufs.len() > 0);
         self.bufs.mut_last().unwrap().read_from(source)
+    }
+
+    fn unread(&mut self, n: uint) {
+        assert!(self.bufs.len() > 0);
+        self.bufs.mut_last().unwrap().unread(n);
     }
 }
 
@@ -149,29 +159,32 @@ impl<R: Reader> MarkdownParser<R> {
         (result, None)
     }
 
-    pub fn next(&mut self) -> MarkdownResult<Block> {
-        self.parse_block()
-    }
+    #[inline]
+    pub fn next(&mut self) -> MarkdownResult<Block> { self.parse_block() }
     
-    fn push_buf(&mut self) {
-        self.stack.push_new();
-    }
+    #[inline]
+    fn push_buf(&mut self) { self.stack.push_new(); }
     
-    fn pop_buf(&mut self) {
-        self.stack.pop();
-    }
+    #[inline]
+    fn pop_buf(&mut self) { self.stack.pop(); }
 
-    fn read_byte(&mut self) -> MarkdownResult<u8> {
-        result::from_io(self.stack.read_from(&mut self.source))
-    }
+    #[inline]
+    fn read_byte(&mut self) -> io::IoResult<u8> { self.stack.read_from(&mut self.source) }
 
-    fn consume(&mut self) {
-        self.stack.consume();
-    }
+    #[inline]
+    fn read_byte_mr(&mut self) -> MarkdownResult<u8> { result::from_io(self.read_byte()) }
+    
+    #[inline]
+    fn unread_bytes(&mut self, n: uint) { self.stack.unread(n); }
+    
+    #[inline]
+    fn unread_byte(&mut self) { self.unread_bytes(1); }
 
-    fn backtrack(&mut self) {
-        self.stack.rewind();
-    }
+    #[inline]
+    fn consume(&mut self) { self.stack.consume(); }
+
+    #[inline]
+    fn backtrack(&mut self) { self.stack.rewind(); }
     
     fn parse_block(&mut self) -> MarkdownResult<Block> {
         let block = first_of! {
@@ -195,7 +208,18 @@ impl<R: Reader> MarkdownParser<R> {
     }
 
     fn skip_initial_spaces(&mut self) -> Option<MarkdownResult<()>> {
-        None
+        let mut n: u8 = 0;
+        loop {
+            if n >= 4 {
+                return None;
+            }
+            match self.read_byte() {
+                Ok(b' ') => n += 1,  // increase counter and continue
+                Ok(_) => { self.unread_byte(); break },   // not a space and less than 4 spaces
+                Err(e) => return Some(Failure(MarkdownError::from_io(e)))
+            }
+        }
+        Some(Success(()))
     }
 
     fn block_code(&mut self) -> Option<MarkdownResult<Block>> {
