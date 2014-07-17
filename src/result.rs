@@ -1,5 +1,6 @@
 use std::io;
 use std::fmt;
+use std::str::SendStr;
 
 pub enum PartialResult<T, E1, E2> {
     Success(T),
@@ -19,7 +20,7 @@ impl<T, E1, E2> PartialResult<T, E1, E2> {
 pub type MarkdownResult<T> = PartialResult<T, MarkdownError, MarkdownError>;
 
 pub enum MarkdownError {
-    ParseError(&'static str),
+    ParseError(SendStr),
     IoError(io::IoError)
 }
 
