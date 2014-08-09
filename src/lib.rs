@@ -176,13 +176,14 @@ macro_rules! first_of(
     )
 )
 
-macro_rules! try_bt(
-    ($_self:ident; $e:expr) => (
+macro_rules! try_reset(
+    ($_self:ident; $e:expr) => ({
+        $_self.mark().set();
         match $e {
-            NoParse => { $_self.backtrack(); return NoParse }
-            r => r
+            NoParse => { $_self.mark().reset(); return NoParse }
+            r => { $_self.mark().unset(); r }
         }
-    )
+    })
 )
 
 macro_rules! check_reset(
@@ -393,8 +394,8 @@ impl<R: Reader> MarkdownParser<R> {
 
     fn block_quote(&mut self) -> ParseResult<Block> {
         fn block_quote_prefix<R: Reader>(this: &mut MarkdownParser<R>) -> ParseResult<()> {
-            try_bt!(this; this.skip_initial_spaces());
-            try_bt!(this; this.read_char(b'>'));
+            try_reset!(this; this.skip_initial_spaces());
+            try_reset!(this; this.read_char(b'>'));
             attempt!(this.try_read_char(b' ')) // optional space after >
         }
 
@@ -434,6 +435,37 @@ impl<R: Reader> MarkdownParser<R> {
         }
     }
 
+    fn block_code(&mut self) -> ParseResult<Block> {
+        fn block_code_prefix<R: Reader>(this: &mut MarkdownParser<R>) -> ParseResult<()> {
+            try_reset!(this; this.skip_initial_spaces());
+            try_reset!(this; this.read_char(b'>'));
+            Success(())
+        }
+
+        try_parse!(try_err_f!(block_code_prefix(self)));
+        self.backtrack();
+
+        let mut buf = Vec::new();
+        loop {
+            match try_err_f!(block_code_prefix(self)) {
+                NoParse => {  // no prefix, check for emptiness
+                    self.mark().set();
+                    match try_err_f!(self.try_parse_empty_line()) {
+                        // non-empty line without prefix
+                        NoParse => { self.mark().reset(); break }
+                        // empty line without prefix, add newline
+                        _ => { self.mark().unset(); buf.push(b'\n') }
+                    }
+                }
+                // prefix is ok, read everything else
+                _ => { try_err_f!(self.read_line_pr(&mut buf)); }
+            }
+        }
+
+        // TODO: handle UTF-8 decoding error
+        Success(BlockCode { tag: None, content: String::from_utf8(buf).unwrap() })
+    }
+
     fn try_parse_empty_line(&mut self) -> ParseResult<()> {
         self.mark().set();
         loop {
@@ -459,10 +491,6 @@ impl<R: Reader> MarkdownParser<R> {
             }
         }
         Success(())
-    }
-
-    fn block_code(&mut self) -> ParseResult<Block> {
-        NoParse
     }
 
 

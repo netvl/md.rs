@@ -12,7 +12,7 @@ pub enum Block {
 
     BlockCode {
         pub tag: Option<String>,
-        pub content: Vec<String>
+        pub content: String
     },
 
     OrderedList(Vec<Document>),
