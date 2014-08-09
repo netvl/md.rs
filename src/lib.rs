@@ -491,6 +491,25 @@ impl<R: Reader> MarkdownParser<R> {
         }
     }
 
+    fn horizontal_rule(&mut self) -> ParseResult<Block> {
+        try_reset!(self; self.skip_initial_spaces());
+
+        let mut c = iotry_err!(self.read_byte()).unwrap();
+        if c == b'-' || c == b'*' || c == b'_' {
+            loop {
+                match iotry_err!(self.read_byte()).unwrap() {
+                    b'\n' => break,
+                    b' ' => c = b' ',
+                    cc if cc == c => {}
+                    _ => return NoParse
+                }
+            }
+            Success(HorizontalRule)
+        } else {
+            NoParse
+        }
+    }
+
     fn try_parse_empty_line(&mut self) -> ParseResult<()> {
         self.mark().set();
         loop {
@@ -516,11 +535,6 @@ impl<R: Reader> MarkdownParser<R> {
             }
         }
         Success(())
-    }
-
-
-    fn horizontal_rule(&mut self) -> ParseResult<Block> {
-        NoParse
     }
 
 
