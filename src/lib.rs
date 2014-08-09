@@ -76,6 +76,7 @@ impl Buf {
     #[inline]
     fn consume(&mut self) {
         self.data.clear();
+        self.marks.clear();
         self.pos = 0;
     }
 
@@ -230,6 +231,23 @@ macro_rules! iotry_err(
         match $e {
             Ok(r) => Success(r),
             Err(e) => return Failure(MarkdownError::from_io(e))
+        }
+    )
+)
+
+macro_rules! break_err(
+    ($e:expr) => (
+        match $e {
+            Failure(_) => break,
+            PartialSuccess(_, _) => break,
+            o => o
+        }
+    );
+    ($e:expr; -> $err:ident) => (
+        match $e {
+            Failure(e) => { $err = Some(e); break }
+            PartialSuccess(_, e) => { $err = Some(e); break }
+            o => o
         }
     )
 )
@@ -403,15 +421,16 @@ impl<R: Reader> MarkdownParser<R> {
         self.backtrack();
 
         let mut buf = Vec::new();
+        let mut err0 = None;
         loop {
-            try_err_f!(block_quote_prefix(self));
-            try_err_f!(self.read_line_pr(&mut buf));
+            break_err!(block_quote_prefix(self); -> err0);
+            break_err!(self.read_line_pr(&mut buf); -> err0);
 
             // break if there is an empty line followed by non-quote line after this line
-            match try_err_f!(self.try_parse_empty_line()) {
+            match break_err!(self.try_parse_empty_line(); -> err0) {
                 Success(_) => {
                     self.mark().set();
-                    match try_err_f!(block_quote_prefix(self)) {
+                    match break_err!(block_quote_prefix(self); -> err0) {
                         NoParse => { self.mark().reset(); break }
                         _ => self.mark().reset()
                     }
@@ -425,13 +444,12 @@ impl<R: Reader> MarkdownParser<R> {
         self.pop_buf();
         self.consume();
 
-        match err {
-            Some(e) => if result.is_empty() {
-                Failure(e)
-            } else {
-                PartialSuccess(BlockQuote(result), e)
-            },
-            None => Success(BlockQuote(result))
+        // TODO: validate this table and errors priority
+        match (err0, err, result.is_empty()) {
+            (_,       Some(e), true) => Failure(e),
+            (_,       Some(e), false) => PartialSuccess(BlockQuote(result), e),
+            (Some(e), None,    _) => PartialSuccess(BlockQuote(result), e),
+            (None,    None,    _) => Success(BlockQuote(result))
         }
     }
 
@@ -446,11 +464,12 @@ impl<R: Reader> MarkdownParser<R> {
         self.backtrack();
 
         let mut buf = Vec::new();
+        let mut err = None;
         loop {
-            match try_err_f!(block_code_prefix(self)) {
+            match break_err!(block_code_prefix(self); -> err) {
                 NoParse => {  // no prefix, check for emptiness
                     self.mark().set();
-                    match try_err_f!(self.try_parse_empty_line()) {
+                    match break_err!(self.try_parse_empty_line(); -> err) {
                         // non-empty line without prefix
                         NoParse => { self.mark().reset(); break }
                         // empty line without prefix, add newline
@@ -458,12 +477,18 @@ impl<R: Reader> MarkdownParser<R> {
                     }
                 }
                 // prefix is ok, read everything else
-                _ => { try_err_f!(self.read_line_pr(&mut buf)); }
+                _ => { break_err!(self.read_line_pr(&mut buf); -> err); }
             }
         }
 
+        self.consume();
+
         // TODO: handle UTF-8 decoding error
-        Success(BlockCode { tag: None, content: String::from_utf8(buf).unwrap() })
+        let result = BlockCode { tag: None, content: String::from_utf8(buf).unwrap() };
+        match err {
+            Some(e) => PartialSuccess(result, e),
+            None => Success(result)
+        }
     }
 
     fn try_parse_empty_line(&mut self) -> ParseResult<()> {
