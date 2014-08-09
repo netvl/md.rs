@@ -40,10 +40,3 @@ impl MarkdownError {
     }
 }
 
-#[inline]
-pub fn from_io<T>(result: io::IoResult<T>) -> MarkdownResult<T> {
-    match result {
-        Ok(value) => Success(value),
-        Err(e) => Failure(MarkdownError::from_io(e))
-    }
-}
