@@ -1,4 +1,6 @@
-#![feature(struct_variant, globs, macro_rules)]
+#![feature(struct_variant, globs, macro_rules, phase)]
+
+#[phase(plugin, link)] extern crate log;
 
 use std::io;
 
@@ -38,16 +40,19 @@ struct Mark<'a> {
 
 impl<'a> Mark<'a> {
     fn set(&mut self) {
+        debug!(">>> setting mark at {}", self.buf.pos);
         self.buf.marks.push(self.buf.pos);
     }
 
     fn unset(&mut self) {
         assert!(self.buf.marks.len() > 0);
+        debug!(">>> unsetting previously set mark at {}", *self.buf.marks.last().unwrap());
         self.buf.marks.pop();
     }
 
     fn reset(&mut self) {
         assert!(self.buf.marks.len() > 0);
+        debug!(">>> resetting to previously set mark at {}", *self.buf.marks.last().unwrap());
         self.buf.pos = self.buf.marks.pop().unwrap();
     }
 }
@@ -92,7 +97,11 @@ impl Buf {
     
     #[inline]
     fn consume(&mut self) {
-        self.data.clear();
+        if self.data.len() == self.pos {
+            self.data.clear();
+        } else {
+            self.data = self.data.slice_from(self.pos).to_vec();
+        }
         self.marks.clear();
         self.pos = 0;
     }
@@ -109,7 +118,7 @@ struct BufStack {
 
 impl BufStack {
     #[inline]
-    fn new() -> BufStack { BufStack { bufs: Vec::new() } }
+    fn new() -> BufStack { BufStack { bufs: vec![Buf::new()] } }
 
     #[inline]
     fn push(&mut self, data: Vec<u8>) {
@@ -160,14 +169,16 @@ impl BufStack {
 
 pub struct MarkdownParser<R> {
     source: R,
-    stack: BufStack
+    stack: BufStack,
+    event_queue: Vec<MarkdownResult<Block>>
 }
 
 impl<R: Reader> MarkdownParser<R> {
     pub fn new(r: R) -> MarkdownParser<R> {
         MarkdownParser {
             source: r,
-            stack: BufStack::new()
+            stack: BufStack::new(),
+            event_queue: Vec::new()
         }
     }
     
@@ -367,7 +378,17 @@ impl<R: Reader> MarkdownParser<R> {
     }
 
     #[inline]
-    pub fn next(&mut self) -> MarkdownResult<Block> { self.parse_block().to_md_result() }
+    pub fn next(&mut self) -> MarkdownResult<Block> { 
+        self.event_queue.shift().unwrap_or_else(|| {
+            let result = self.parse_block().to_md_result();
+            if self.event_queue.len() > 0 { // added elements to the queue
+                self.event_queue.push(result);
+                self.event_queue.shift().unwrap()
+            } else {
+                result
+            }
+        })
+    }
     
     #[inline]
     fn push_existing(&mut self, buf: Vec<u8>) { self.stack.push(buf); }
@@ -379,7 +400,14 @@ impl<R: Reader> MarkdownParser<R> {
     fn pop_buf(&mut self) { self.stack.pop(); }
 
     #[inline]
-    fn read_byte(&mut self) -> io::IoResult<u8> { self.stack.read_from(&mut self.source) }
+    fn read_byte(&mut self) -> io::IoResult<u8> {
+        let b = self.stack.read_from(&mut self.source);
+        match b {
+            Ok(ref b) => debug!(">>> read byte: {} ~ {}", *b, (*b) as char),
+            Err(ref e) => debug!(">>> error reading byte: {}", *e)
+        }
+        b
+    }
 
     #[inline]
     fn read_byte_pr(&mut self) -> ParseResult<u8> { ParseResult::from_io(self.read_byte()) }
@@ -394,16 +422,25 @@ impl<R: Reader> MarkdownParser<R> {
     }
 
     #[inline]
-    fn unread_bytes(&mut self, n: uint) { self.stack.unread(n); }
+    fn unread_bytes(&mut self, n: uint) { 
+        debug!(">>> unreading {} bytes", n);
+        self.stack.unread(n);
+    }
     
     #[inline]
     fn unread_byte(&mut self) { self.unread_bytes(1); }
 
     #[inline]
-    fn consume(&mut self) { self.stack.consume(); }
+    fn consume(&mut self) { 
+        debug!(">>> consuming buffer");
+        self.stack.consume();
+    }
 
     #[inline]
-    fn backtrack(&mut self) { self.stack.rewind(); }
+    fn backtrack(&mut self) { 
+        debug!(">>> rewinding buffer to initial position");
+        self.stack.rewind();
+    }
 
     #[inline]
     fn mark(&mut self) -> Mark { self.stack.mark() }
@@ -425,6 +462,14 @@ impl<R: Reader> MarkdownParser<R> {
     }
     
     fn parse_block(&mut self) -> ParseResult<Block> {
+        debug!("--- parsing a block");
+        // Skip empty lines
+        loop {
+            match try_err_f!(self.try_parse_empty_line()) {
+                NoParse => break,
+                _ => self.consume()
+            }
+        }
         first_of! {
             self.block_quote() or
             self.block_code() or
@@ -444,6 +489,7 @@ impl<R: Reader> MarkdownParser<R> {
             attempt!(this.try_read_char(b' ')) // optional space after >
         }
 
+        debug!(">> trying blockquote");
         try_parse!(try_err_f!(block_quote_prefix(self)));
         self.backtrack();
 
@@ -482,11 +528,20 @@ impl<R: Reader> MarkdownParser<R> {
 
     fn block_code(&mut self) -> ParseResult<Block> {
         fn block_code_prefix<R: Reader>(this: &mut MarkdownParser<R>) -> ParseResult<()> {
-            try_reset!(this; this.skip_initial_spaces());
-            try_reset!(this; this.read_char(b'>'));
+            let mut n = 0u;
+            this.mark().set();
+            loop {
+                if n == 4 { break };
+                match try_err_f!(this.read_char(b' ')) {
+                    NoParse => { this.mark().reset(); return NoParse },
+                    _ => n += 1
+                }
+            }
+            this.mark().unset();
             Success(())
         }
 
+        debug!(">> trying code block");
         try_parse!(try_err_f!(block_code_prefix(self)));
         self.backtrack();
 
@@ -519,6 +574,7 @@ impl<R: Reader> MarkdownParser<R> {
     }
 
     fn horizontal_rule(&mut self) -> ParseResult<Block> {
+        debug!(">> trying hrule");
         try_reset!(self; self.skip_initial_spaces());
 
         let mut c = iotry_err!(self.read_byte()).unwrap();
@@ -540,7 +596,8 @@ impl<R: Reader> MarkdownParser<R> {
     }
 
     fn atx_heading(&mut self) -> ParseResult<Block> {
-        try_parse!(try_err_f!(self.read_char(b'#')));
+        debug!(">> trying atx header");
+        try_parse!(check_reset!(self; try_err_f!(self.read_char(b'#'))));
         self.unread_byte();
 
         // read and count hashes
@@ -595,6 +652,7 @@ impl<R: Reader> MarkdownParser<R> {
         self.push_existing(buf);
         let result = self.inline();
         self.pop_buf();
+        self.consume();
 
         result.map(|r| Heading {
             level: n,
@@ -603,6 +661,8 @@ impl<R: Reader> MarkdownParser<R> {
     }
 
     fn paragraph(&mut self) -> ParseResult<Block> {
+        debug!(">> reading paragraph");
+
         let mut buf = Vec::new();
         let mut err0 = None;
         let mut level = None;
@@ -653,6 +713,7 @@ impl<R: Reader> MarkdownParser<R> {
         self.push_existing(buf);
         let result = self.inline();
         self.pop_buf();
+        self.consume();
 
         match (err0, result) {
             (Some(e), Success(r)) => PartialSuccess(Paragraph(r), e),
@@ -727,7 +788,19 @@ impl<R: Reader> MarkdownParser<R> {
     }
 
     fn inline(&mut self) -> ParseResult<Text> {
-        NoParse
+        let mut buf = Vec::new();
+        let mut err;
+        loop {
+            break_err!(self.read_line_pr(&mut buf); -> err);
+        }
+
+        let result = vec![Chunk(String::from_utf8(buf).unwrap())];
+        match err {
+            // TODO: handle UTF-8 decoding errors
+            None => Success(result),
+            Some(IoError(ref e)) if e.kind == io::EndOfFile => Success(result),
+            Some(e) => PartialSuccess(result, e)
+        }
     }
 
     fn parse_error<T>(&mut self, what: &str) -> ParseResult<T> {

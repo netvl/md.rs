@@ -1,0 +1,10 @@
+[package]
+name = "rust-md_examples"
+version = "0.1.0"
+authors = ["Vladimir Matveev <vladimir.matweev@gmail.com>"]
+
+[dependencies.rust-md]
+path = "../"
+
+[[bin]]
+name = "reader"
