@@ -303,6 +303,16 @@ impl<T> ParseResult<T> {
         }
     }
 
+    #[inline]
+    fn map<U>(self, f: |T| -> U) -> ParseResult<U> {
+        match self {
+            Success(r) => Success(f(r)),
+            PartialSuccess(r, e) => PartialSuccess(f(r), e),
+            Failure(e) => Failure(e),
+            NoParse => NoParse
+        }
+    }
+
     fn to_md_result(self) -> MarkdownResult<T> {
         match self {
             Success(r) => result::Success(r),
@@ -402,7 +412,8 @@ impl<R: Reader> MarkdownParser<R> {
             self.block_quote() or
             self.block_code() or
             self.horizontal_rule() or
-            self.heading() or
+            self.atx_heading() or
+            self.setext_heading() or
             self.ordered_list() or
             self.unordered_list() or
             self.paragraph() or
@@ -499,14 +510,88 @@ impl<R: Reader> MarkdownParser<R> {
             loop {
                 match iotry_err!(self.read_byte()).unwrap() {
                     b'\n' => break,
-                    b' ' => c = b' ',
+                    b' ' => c = b' ',  // from now on everything should be spaces
                     cc if cc == c => {}
-                    _ => return NoParse
+                    _ => { self.backtrack(); return NoParse }
                 }
             }
+            self.consume();
             Success(HorizontalRule)
         } else {
+            self.backtrack();
             NoParse
+        }
+    }
+
+    fn atx_heading(&mut self) -> ParseResult<Block> {
+        try_parse!(try_err_f!(self.read_char(b'#')));
+        self.unread_byte();
+
+        // read and count hashes
+        let mut n = 0;
+        let mut err = None;
+        while n < 6 {
+            match break_err!(self.read_byte_pr(); -> err).unwrap() {
+                b'#' => {}
+                _ => { self.unread_byte(); break }
+            }
+        }
+
+        let mut buf = Vec::new();
+
+        // skip spaces after hashes
+        err = err.or_else(|| match self.skip_spaces() {
+            PartialSuccess(_, e) | Failure(e) => Some(e),
+            _ => None
+        // read the rest of the line
+        }).or_else(|| match self.read_line_pr(&mut buf) {
+            Failure(e) => Some(e),
+            _ => { 
+                buf.pop();  // remove newline
+                None
+            }
+        });
+
+        // if there were errors, return partial success with empty text
+        match err {
+            Some(e) => return PartialSuccess(Heading {
+                level: n,
+                content: Vec::new()
+            }, e),
+            None => {}
+        }
+         
+        // skip hashes and spaces backwards
+        while buf.len() > 0 {
+            match *buf.last().unwrap() {
+                b'#' => { buf.pop(); }
+                _ => break
+            }
+        }
+        while buf.len() > 0 {
+            match *buf.last().unwrap() {
+                b' ' => { buf.pop(); }
+                _ => break
+            }
+        }
+
+        // parse header contents
+        self.push_existing(buf);
+        let result = self.inline();
+        self.pop_buf();
+
+        result.map(|r| Heading {
+            level: n,
+            content: r
+        })
+    }
+
+    fn skip_spaces(&mut self) -> ParseResult<()> {
+        loop {
+            match iotry_err!(self.read_byte()).unwrap() {
+                b' ' => {},
+                _ => { self.unread_byte(); return Success(()) }
+            }
         }
     }
 
@@ -537,26 +622,25 @@ impl<R: Reader> MarkdownParser<R> {
         Success(())
     }
 
-
-    fn heading(&mut self) -> ParseResult<Block> {
+    fn setext_heading(&mut self) -> ParseResult<Block> {
         NoParse
     }
-
 
     fn ordered_list(&mut self) -> ParseResult<Block> {
         NoParse
     }
 
-
     fn unordered_list(&mut self) -> ParseResult<Block> {
         NoParse
     }
-
 
     fn paragraph(&mut self) -> ParseResult<Block> {
         NoParse
     }
 
+    fn inline(&mut self) -> ParseResult<Text> {
+        NoParse
+    }
 
     fn parse_error<T>(&mut self, what: &str) -> ParseResult<T> {
         parse_error!("unable to parse {}; current buffer contents: {}", what, self.stack.peek().data)
