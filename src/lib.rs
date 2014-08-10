@@ -8,6 +8,23 @@ pub use tokens::*;
 pub mod tokens;
 pub mod result;
 
+#[repr(u8)]
+#[deriving(FromPrimitive)]
+enum SetextHeaderLevel {
+    StxFirst = b'=',
+    StxSecond = b'-'
+}
+
+impl SetextHeaderLevel {
+    #[inline]
+    fn to_numeric(self) -> uint {
+        match self {
+            StxFirst => 1,
+            StxSecond => 2
+        }
+    }
+}
+
 struct Buf {
     data: Vec<u8>,
     marks: Vec<uint>,
@@ -413,7 +430,6 @@ impl<R: Reader> MarkdownParser<R> {
             self.block_code() or
             self.horizontal_rule() or
             self.atx_heading() or
-            self.setext_heading() or
             self.ordered_list() or
             self.unordered_list() or
             self.paragraph() or
@@ -532,7 +548,7 @@ impl<R: Reader> MarkdownParser<R> {
         let mut err = None;
         while n < 6 {
             match break_err!(self.read_byte_pr(); -> err).unwrap() {
-                b'#' => {}
+                b'#' => n += 1,
                 _ => { self.unread_byte(); break }
             }
         }
@@ -586,11 +602,91 @@ impl<R: Reader> MarkdownParser<R> {
         })
     }
 
+    fn paragraph(&mut self) -> ParseResult<Block> {
+        let mut buf = Vec::new();
+        let mut err0 = None;
+        let mut level = None;
+        loop {
+            break_err!(self.read_line_pr(&mut buf); -> err0);
+
+            // empty line means paragraph end
+            match break_err!(self.try_parse_empty_line(); -> err0) {
+                Success(_) => break,
+                _ => {}
+            }
+
+            // header line means that the paragraph ended, and its last line
+            // should be parsed as a heading
+            match break_err!(self.try_parse_header_line(); -> err0) {
+                Success(r) => { level = Some(r); break }
+                _ => {}
+            }
+
+            // TODO: check for atx header, hrule or quote
+
+            // TODO: lax spacing rules: check for list/html block/code fence
+        }
+
+        match level {
+            // extract last line from the buffer
+            Some(level) => {
+                // unwrap is safe because buf will contain at least one
+                // line in this case
+                let nl_idx = buf.as_slice().rposition_elem(&b'\n').unwrap();
+                let head_content = buf.slice_from(nl_idx+1).to_vec();
+                buf.truncate(nl_idx+1);
+
+                self.push_existing(head_content);
+                let result = self.inline();
+                self.pop_buf();
+
+                // TODO: store the heading to some internal state and output
+                // it first
+                let heading_result = result.map(|r| Heading {
+                    level: level.to_numeric(),
+                    content: r
+                });
+            }
+            None => {}
+        }
+
+        self.push_existing(buf);
+        let result = self.inline();
+        self.pop_buf();
+
+        match (err0, result) {
+            (Some(e), Success(r)) => PartialSuccess(Paragraph(r), e),
+            (Some(e), PartialSuccess(r, _)) => PartialSuccess(Paragraph(r), e),
+            (Some(e), _) => Failure(e),
+            (None, r) => r.map(Paragraph)
+        }
+    }
+
     fn skip_spaces(&mut self) -> ParseResult<()> {
         loop {
             match iotry_err!(self.read_byte()).unwrap() {
                 b' ' => {},
                 _ => { self.unread_byte(); return Success(()) }
+            }
+        }
+    }
+
+    fn try_parse_header_line(&mut self) -> ParseResult<SetextHeaderLevel> {
+        self.mark().set();
+
+        // TODO: is it important that the mark can be left set?
+        let mut cc = match iotry_err!(self.read_byte()).unwrap() {
+            c if c == b'=' || c == b'-' => c,
+            _ => { self.mark().reset(); return NoParse }
+        };
+        let level = FromPrimitive::from_u8(cc).unwrap();
+
+        loop {
+            match iotry_err!(self.read_byte()).unwrap() {
+                c if c == cc => {},
+                b' ' => cc = b' ',  // consume only spaces from now on
+                b'\n' => { self.mark().unset(); return Success(level) },
+                _ => { self.mark().reset(); return NoParse }
             }
         }
     }
@@ -622,19 +718,11 @@ impl<R: Reader> MarkdownParser<R> {
         Success(())
     }
 
-    fn setext_heading(&mut self) -> ParseResult<Block> {
-        NoParse
-    }
-
     fn ordered_list(&mut self) -> ParseResult<Block> {
         NoParse
     }
 
     fn unordered_list(&mut self) -> ParseResult<Block> {
-        NoParse
-    }
-
-    fn paragraph(&mut self) -> ParseResult<Block> {
         NoParse
     }
 

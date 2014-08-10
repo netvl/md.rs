@@ -2,9 +2,10 @@ pub type Document = Vec<Block>;
 
 pub type Text = Vec<Inline>;
 
+#[deriving(PartialEq, Eq, Show)]
 pub enum Block {
     Heading {
-        pub level: int,
+        pub level: uint,
         pub content: Text
     },
     
@@ -30,6 +31,7 @@ pub enum Block {
     }
 }
 
+#[deriving(PartialEq, Eq, Show)]
 pub enum Inline{
     LineBreak,
 
