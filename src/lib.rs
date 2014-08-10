@@ -27,6 +27,17 @@ impl SetextHeaderLevel {
     }
 }
 
+trait CharOps {
+    fn is_emphasis(self) -> bool;
+}
+
+impl CharOps for u8 {
+    #[inline]
+    fn is_emphasis(self) -> bool {
+        self == b'*' || self == b'_'
+    }
+}
+
 struct Buf {
     data: Vec<u8>,
     marks: Vec<uint>,
@@ -264,13 +275,6 @@ macro_rules! iotry_err(
 )
 
 macro_rules! break_err(
-    ($e:expr) => (
-        match $e {
-            Failure(_) => break,
-            PartialSuccess(_, _) => break,
-            o => o
-        }
-    );
     ($e:expr; -> $err:ident) => (
         match $e {
             Failure(e) => { $err = Some(e); break }
@@ -278,6 +282,18 @@ macro_rules! break_err(
             o => o
         }
     )
+)
+
+macro_rules! break_err_check(
+    ($e:expr; -> $err:ident; $a:expr) => ({
+        self.mark().set();
+        match $e {
+            Failure(e) => { $err = Some(e); break }
+            PartialSuccess(_, e) => { $err = Some(e); break }
+            NoParse => { self.mark().reset(); NoParse }
+            Success(r) => { self.mark().unset(); Success(r) }
+        }
+    })
 )
 
 macro_rules! attempt(
@@ -302,6 +318,14 @@ impl<T> ParseResult<T> {
         match r {
             Ok(r) => Success(r),
             Err(e) => Failure(MarkdownError::from_io(e))
+        }
+    }
+
+    #[inline]
+    fn is_success(&self) -> bool {
+        match *self {
+            Success(_) => true,
+            _ => false
         }
     }
 
@@ -700,12 +724,11 @@ impl<R: Reader> MarkdownParser<R> {
                 let result = self.inline();
                 self.pop_buf();
 
-                // TODO: store the heading to some internal state and output
-                // it first
                 let heading_result = result.map(|r| Heading {
                     level: level.to_numeric(),
                     content: r
                 });
+                self.event_queue.push(heading_result);
             }
             None => {}
         }
@@ -788,18 +811,92 @@ impl<R: Reader> MarkdownParser<R> {
     }
 
     fn inline(&mut self) -> ParseResult<Text> {
+        let mut tokens = Vec::new();
         let mut buf = Vec::new();
         let mut err;
-        loop {
-            break_err!(self.read_line_pr(&mut buf); -> err);
+        let mut escaping = false;
+        let mut space = false;
+
+        macro_rules! continue_with(
+            ($($c:expr),+) => ({
+                $(buf.push($c);)+
+                continue
+            })
+        )
+
+        fn find_emph_closing<R: Reader>(this: MarkdownParser<R>, ec: u8, n: uint) 
+            -> ParserResult<Vec<u8>> {
+
+            let mut result = Vec::new();
+            let mut err = None;
+
+            'outer: loop {
+                match break_err!(this.read_byte_pr(); -> err).unwrap() {
+                    c if c == ec => {
+                        let mut n = n;
+                        while n > 1 {
+                            match this.read_char(ec) {
+                                Success(_) => n += 1,
+                                NoParse => { result.push(c); continue 'outer }
+                                Failure(e) | PartialSuccess(_, e) => {
+                                    err = Some(e);
+                                    break 'outer;
+                                }
+                            }
+                        }
+
+
+                    }
+                }
+            }
         }
 
-        let result = vec![Chunk(String::from_utf8(buf).unwrap())];
+        loop {
+            match break_err!(self.read_byte_pr(); -> err).unwrap() {
+                b' ' => { space = true; continue_with!(b' ') }
+                b'\\' => { escaping => true; continue }
+
+                c if escaping => { escaping = false; continue_with!(c) }
+
+                c if c.is_emphasis() => { 
+                    if space {
+                        space = false;
+                        match break_err!(self.read_byte_pr(); -> err).unwrap() {
+                            b' ' => { 
+                                self.unread_byte();
+                                continue_with!(c)  // this character is escaped
+                            }
+                            _ => self.unread_byte()
+                        }
+                    } 
+                    
+                    // one or two emphasis characters
+                    let n = 1;
+                    if break_err_check!(self.read_char(c); -> err).is_success() {
+                        n += 1;
+                    }
+
+                    let buf = break_err!(find_emph_closing(self, c, n); -> err).unwrap();
+                    self.push_existing(buf);
+                    let result = break_err!(self.inline(); -> err).unwrap();
+                    self.pop_buf();
+                    self.consume();  // up to and including closing emphasis
+
+                    let result = match n {
+                        1 => Emphasis(result),
+                        2 => MoreEmphasis(result),
+                        _ => unreachable!()
+                    };
+                    tokens.push(result)
+                }
+            }
+        }
+
         match err {
             // TODO: handle UTF-8 decoding errors
-            None => Success(result),
-            Some(IoError(ref e)) if e.kind == io::EndOfFile => Success(result),
-            Some(e) => PartialSuccess(result, e)
+            None => Success(()),
+            Some(IoError(ref e)) if e.kind == io::EndOfFile => Success(()),
+            Some(e) => PartialSuccess((), e)
         }
     }
 
