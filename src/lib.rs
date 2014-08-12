@@ -3,6 +3,7 @@
 #[phase(plugin, link)] extern crate log;
 
 use std::io;
+use std::mem;
 
 pub use result::*;
 pub use tokens::*;
@@ -29,12 +30,18 @@ impl SetextHeaderLevel {
 
 trait CharOps {
     fn is_emphasis(self) -> bool;
+    fn is_code(self) -> bool;
 }
 
 impl CharOps for u8 {
     #[inline]
     fn is_emphasis(self) -> bool {
         self == b'*' || self == b'_'
+    }
+
+    #[inline]
+    fn is_code(self) -> bool {
+        self == b'`' || self == b'`'
     }
 }
 
@@ -870,7 +877,9 @@ impl<R: Reader> MarkdownParser<R> {
 
                     // inline code block started, and we're not inline code block ourselves
                     // we need to pass through this block as is
-                    c if c == b'`' => {  
+                    c if c == b'`' => {
+                        result.push(b'`');
+
                         // count `s
                         let mut sn = 1u;
                         while break_err!(this.read_char(b'`'); -> err).is_success() {
@@ -896,6 +905,7 @@ impl<R: Reader> MarkdownParser<R> {
                                 }
                             }
                         }
+
                     }
 
                     // TODO: skip hyperlinks
@@ -918,7 +928,13 @@ impl<R: Reader> MarkdownParser<R> {
                 b'\\' => { escaping = true; continue }
                 c if escaping => { escaping = false; continue_with!(c) }
 
-                c if c.is_emphasis() => { 
+                c if c.is_emphasis() || c.is_code() => { 
+                    // TODO: handle UTF-8 decoding error
+                    tokens.push(Chunk(
+                        String::from_utf8(mem::replace(&mut buf, Vec::new())).unwrap()
+                    ));
+                    self.consume();
+
                     if space {
                         space = false;
                         match break_err!(self.read_byte_pr(); -> err).unwrap() {
@@ -938,7 +954,7 @@ impl<R: Reader> MarkdownParser<R> {
 
                     // read everything until closing emphasis bracket
                     let buf = break_err!(find_emph_closing(self, c, n); -> err).unwrap();
-                    let result = if c == b'`' {  // code block
+                    let result = if c.is_code() {  // code block
                         self.consume();
                         Code(String::from_utf8(buf).unwrap())  // TODO: handle UTF8 errors
                     } else {
@@ -959,6 +975,10 @@ impl<R: Reader> MarkdownParser<R> {
                 // push plain characters to the buffer
                 c => buf.push(c)
             }
+        }
+
+        if buf.len() > 0 {
+            tokens.push(Chunk(String::from_utf8(buf).unwrap()));
         }
 
         match err {
