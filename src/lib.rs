@@ -296,13 +296,13 @@ macro_rules! break_err(
 )
 
 macro_rules! break_err_check(
-    ($e:expr; -> $err:ident; $a:expr) => ({
-        self.mark().set();
+    ($_self:expr; $e:expr; -> $err:ident) => ({
+        $_self.mark().set();
         match $e {
             Failure(e) => { $err = Some(e); break }
             PartialSuccess(_, e) => { $err = Some(e); break }
-            NoParse => { self.mark().reset(); NoParse }
-            Success(r) => { self.mark().unset(); Success(r) }
+            NoParse => { $_self.mark().reset(); NoParse }
+            Success(r) => { $_self.mark().unset(); Success(r) }
         }
     })
 )
@@ -739,7 +739,7 @@ impl<R: Reader> MarkdownParser<R> {
                     level: level.to_numeric(),
                     content: r
                 });
-                self.event_queue.push(heading_result);
+                self.event_queue.push(heading_result.to_md_result());
             }
             None => {}
         }
@@ -835,8 +835,8 @@ impl<R: Reader> MarkdownParser<R> {
             })
         )
 
-        fn find_emph_closing<R: Reader>(this: MarkdownParser<R>, ec: u8, n: uint) 
-            -> ParserResult<Vec<u8>> {
+        fn find_emph_closing<R: Reader>(this: &mut MarkdownParser<R>, ec: u8, n: uint) 
+            -> ParseResult<Vec<u8>> {
             assert!(n > 0);  // need at least one emphasis character
 
             let mut result = Vec::new();
@@ -872,7 +872,7 @@ impl<R: Reader> MarkdownParser<R> {
                     // we need to pass through this block as is
                     c if c == b'`' => {  
                         // count `s
-                        let mut sn = 1;
+                        let mut sn = 1u;
                         while break_err!(this.read_char(b'`'); -> err).is_success() {
                             result.push(b'`');
                             sn += 1;
@@ -886,7 +886,7 @@ impl<R: Reader> MarkdownParser<R> {
                                     result.push(b);
                                     match b {
                                         b'`' => tn += 1,
-                                        _    => tn = 0;
+                                        _    => tn = 0
                                     }
                                 },
 
@@ -900,19 +900,22 @@ impl<R: Reader> MarkdownParser<R> {
 
                     // TODO: skip hyperlinks
 
-                    // just skip any other character
+                    // just pass through any other character
                     c => result.push(c)
                 }
             }
 
-            Success(result)
+            match err {
+                Some(e) => PartialSuccess(result, e),
+                None => Success(result)
+            }
         }
 
         loop {
             match break_err!(self.read_byte_pr(); -> err).unwrap() {
                 b' ' => { space = true; continue_with!(b' ') }
-                b'\\' => { escaping => true; continue }
 
+                b'\\' => { escaping = true; continue }
                 c if escaping => { escaping = false; continue_with!(c) }
 
                 c if c.is_emphasis() => { 
@@ -928,33 +931,41 @@ impl<R: Reader> MarkdownParser<R> {
                     } 
                     
                     // one or two emphasis characters
-                    let n = 1;
-                    if break_err_check!(self.read_char(c); -> err).is_success() {
+                    let mut n = 1;
+                    if break_err_check!(self; self.read_char(c); -> err).is_success() {
                         n += 1;
                     }
 
                     // read everything until closing emphasis bracket
                     let buf = break_err!(find_emph_closing(self, c, n); -> err).unwrap();
-                    self.push_existing(buf);
-                    let result = break_err!(self.inline(); -> err).unwrap();
-                    self.pop_buf();
-                    self.consume();  // up to and including closing emphasis
-
-                    let result = match n {
-                        1 => Emphasis(result),
-                        2 => MoreEmphasis(result),
-                        _ => unreachable!()
+                    let result = if c == b'`' {  // code block
+                        self.consume();
+                        Code(String::from_utf8(buf).unwrap())  // TODO: handle UTF8 errors
+                    } else {
+                        self.push_existing(buf);
+                        let result = break_err!(self.inline(); -> err).unwrap();
+                        self.pop_buf();
+                        self.consume();  // up to and including closing emphasis
+                        match n {
+                            1 => Emphasis(result),
+                            2 => MoreEmphasis(result),
+                            _ => unreachable!()
+                        }
                     };
+
                     tokens.push(result)
                 }
+
+                // push plain characters to the buffer
+                c => buf.push(c)
             }
         }
 
         match err {
             // TODO: handle UTF-8 decoding errors
-            None => Success(()),
-            Some(IoError(ref e)) if e.kind == io::EndOfFile => Success(()),
-            Some(e) => PartialSuccess((), e)
+            None => Success(tokens),
+            Some(IoError(ref e)) if e.kind == io::EndOfFile => Success(tokens),
+            Some(e) => PartialSuccess(tokens, e)
         }
     }
 
