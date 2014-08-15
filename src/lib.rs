@@ -7,9 +7,11 @@ use std::mem;
 
 pub use result::*;
 pub use tokens::*;
+pub use parser::MarkdownParser;
 
 pub mod tokens;
 pub mod result;
+pub mod parser;
 
 #[repr(u8)]
 #[deriving(FromPrimitive)]
@@ -185,37 +187,6 @@ impl BufStack {
     }
 }
 
-pub struct MarkdownParser<R> {
-    source: R,
-    stack: BufStack,
-    event_queue: Vec<MarkdownResult<Block>>
-}
-
-impl<R: Reader> MarkdownParser<R> {
-    pub fn new(r: R) -> MarkdownParser<R> {
-        MarkdownParser {
-            source: r,
-            stack: BufStack::new(),
-            event_queue: Vec::new()
-        }
-    }
-    
-    pub fn tokens(self) -> MarkdownTokens<R> {
-        MarkdownTokens { parser: self }
-    }
-}
-
-pub struct MarkdownTokens<R> {
-    parser: MarkdownParser<R>
-}
-
-impl<R: Reader> Iterator<Block> for MarkdownTokens<R> {
-    #[inline]
-    fn next(&mut self) -> Option<Block> {
-        self.parser.next().to_result().ok()
-    }
-}
-
 macro_rules! first_of(
     ($e:expr) => ($e);
     ($e:expr or $f:expr $(or $more:expr)*) => (
@@ -325,6 +296,7 @@ macro_rules! attempt(
 
 enum ParseResult<T> {
     NoParse,
+    End,
     Success(T),
     PartialSuccess(T, MarkdownError),
     Failure(MarkdownError)
