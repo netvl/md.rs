@@ -1,66 +1,64 @@
-impl MarkdownParser {
-    fn atx_heading(&mut self) -> ParseResult<Block> {
+use parser::{MarkdownParser, ParseResult, Success, End, NoParse};
+use tokens::*;
+use parser::inline::InlineParser;
+
+pub trait AtxHeadingParser {
+    fn parse_atx_heading(&self) -> ParseResult<Block>;
+}
+
+impl<'a> AtxHeadingParser for MarkdownParser<'a> {
+    fn parse_atx_heading(&self) -> ParseResult<Block> {
         debug!(">> trying atx header");
-        try_parse!(check_reset!(self; try_err_f!(self.read_char(b'#'))));
-        self.unread_byte();
+        parse_or_ret!(self.try_read_char(b'#'));
+        self.cur.prev();
 
         // read and count hashes
         let mut n = 0;
-        let mut err = None;
         while n < 6 {
-            match break_err!(self.read_byte_pr(); -> err).unwrap() {
-                b'#' => n += 1,
-                _ => { self.unread_byte(); break }
+            match self.cur.next_byte() {
+                Some(b'#') => n += 1,
+                Some(_) | None => { self.cur.prev(); break }
             }
         }
 
-        let mut buf = Vec::new();
+        let pm = self.cur.phantom_mark();
 
         // skip spaces after hashes
-        err = err.or_else(|| match self.skip_spaces() {
-            PartialSuccess(_, e) | Failure(e) => Some(e),
-            _ => None
-        // read the rest of the line
-        }).or_else(|| match self.read_line_pr(&mut buf) {
-            Failure(e) => Some(e),
-            _ => { 
-                buf.pop();  // remove newline
-                None
-            }
-        });
-
-        // if there were errors, return partial success with empty text
-        match err {
-            Some(e) => return PartialSuccess(Heading {
+        // short-circuit if the document ends here
+        if self.skip_spaces().is_end() {
+            return Success(Heading {
                 level: n,
                 content: Vec::new()
-            }, e),
-            None => {}
+            });
         }
-         
+
+        // read the rest of the line
+        self.read_line();
+        let buf = pm.slice_to_now();
+        let buf = buf.slice_to(buf.len()-1);  // remove newline
+
         // skip hashes and spaces backwards
-        while buf.len() > 0 {
-            match *buf.last().unwrap() {
-                b'#' => { buf.pop(); }
+        let mut n = buf.len();
+        while n > 0 {
+            match buf[n-1] {
+                b'#' => n -= 1,
                 _ => break
             }
         }
-        while buf.len() > 0 {
-            match *buf.last().unwrap() {
-                b' ' => { buf.pop(); }
+        while n > 0 {
+            match buf[n-1] {
+                b' ' => n -= 1,
                 _ => break
             }
         }
 
         // parse header contents
-        self.push_existing(buf);
-        let result = self.inline();
-        self.pop_buf();
-        self.consume();
+        let subp = MarkdownParser::new(buf.slice_to(n));
+        let result = subp.parse_inline();
 
-        result.map(|r| Heading {
+        Success(Heading {
             level: n,
-            content: r
+            content: result
         })
     }
 }

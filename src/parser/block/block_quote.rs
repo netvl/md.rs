@@ -1,50 +1,52 @@
-impl MarkdownParser {
-    fn block_quote_prefix<R: Reader>(&mut self) -> ParseResult<()> {
+use parser::{MarkdownParser, ParseResult, Success, End, NoParse};
+use tokens::*;
 
+pub trait BlockQuoteParser {
+    fn parse_block_quote(&self) -> ParseResult<Block>;
+}
+
+trait Ops {
+    fn block_quote_prefix(&self) -> ParseResult<()>;
+}
+
+impl<'a> Ops for MarkdownParser<'a> {
+    fn block_quote_prefix(&self) -> ParseResult<()> {
+        parse_or_ret!(self.try_skip_initial_spaces());
+        parse_or_ret!(self.try_read_char(b'>'));
+        self.try_read_char(b' ');
+        Success(())
     }
+}
 
-    fn block_quote(&mut self) -> ParseResult<Block> {
-        fn block_quote_prefix<R: Reader>(this: &mut MarkdownParser<R>) -> ParseResult<()> {
-            try_reset!(this; this.skip_initial_spaces());
-            try_reset!(this; this.read_char(b'>'));
-            attempt!(this.try_read_char(b' ')) // optional space after >
-        }
-
+impl<'a> BlockQuoteParser for MarkdownParser<'a> {
+    fn parse_block_quote(&self) -> ParseResult<Block> {
         debug!(">> trying blockquote");
-        try_parse!(try_err_f!(block_quote_prefix(self)));
-        self.backtrack();
+        parse_or_ret!(self.block_quote_prefix());
+        self.cur.reset();
 
         let mut buf = Vec::new();
-        let mut err0 = None;
         loop {
-            break_err!(block_quote_prefix(self); -> err0);
-            break_err!(self.read_line_pr(&mut buf); -> err0);
+            parse_or_break!(self.block_quote_prefix());
+            parse_or_break!(self.read_line_to(&mut buf));
 
             // break if there is an empty line followed by non-quote line after this line
-            match break_err!(self.try_parse_empty_line(); -> err0) {
+            match self.try_parse_empty_line() {
                 Success(_) => {
-                    self.mark().set();
-                    match break_err!(block_quote_prefix(self); -> err0) {
-                        NoParse => { self.mark().reset(); break }
-                        _ => self.mark().reset()
+                    let mut _m = self.cur.mark();
+                    match self.block_quote_prefix() {
+                        NoParse | End => break,
+                        _ => {}
                     }
                 }
+                End => break,
                 _ => {}
             }
         }
 
-        self.push_existing(buf);
-        let (result, err) = self.read_while_possible();
-        self.pop_buf();
-        self.consume();
+        let subp = MarkdownParser::new(buf.as_slice());
+        let result = subp.read_all();
 
-        // TODO: validate this table and errors priority
-        match (err0, err, result.is_empty()) {
-            (_,       Some(e), true) => Failure(e),
-            (_,       Some(e), false) => PartialSuccess(BlockQuote(result), e),
-            (Some(e), None,    _) => PartialSuccess(BlockQuote(result), e),
-            (None,    None,    _) => Success(BlockQuote(result))
-        }
+        Success(BlockQuote(result))
     }
 
 }

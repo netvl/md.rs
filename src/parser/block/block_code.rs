@@ -1,48 +1,53 @@
-impl MarkdownParser {
-    fn block_code(&mut self) -> ParseResult<Block> {
-        fn block_code_prefix<R: Reader>(this: &mut MarkdownParser<R>) -> ParseResult<()> {
-            let mut n = 0u;
-            this.mark().set();
-            loop {
-                if n == 4 { break };
-                match try_err_f!(this.read_char(b' ')) {
-                    NoParse => { this.mark().reset(); return NoParse },
-                    _ => n += 1
-                }
-            }
-            this.mark().unset();
-            Success(())
-        }
+use parser::{MarkdownParser, ParseResult, Success, End, NoParse};
+use tokens::*;
 
+pub trait BlockCodeParser {
+    fn parse_block_code(&self) -> ParseResult<Block>;
+}
+
+trait Ops {
+    fn block_code_prefix(&self) -> ParseResult<()>;
+}
+
+impl<'a> Ops for MarkdownParser<'a> {
+    fn block_code_prefix(&self) -> ParseResult<()> {
+        let mut n = 0u;
+        let mut m = self.cur.mark();
+        loop {
+            if n == 4 { break };
+            parse_or_ret!(self.try_read_char(b' '));
+            n += 1
+        }
+        m.cancel();
+        Success(())
+    }
+}
+
+impl<'a> BlockCodeParser for MarkdownParser<'a> {
+    fn parse_block_code(&self) -> ParseResult<Block> {
         debug!(">> trying code block");
-        try_parse!(try_err_f!(block_code_prefix(self)));
-        self.backtrack();
+        parse_or_ret!(self.block_code_prefix());
+        self.cur.reset();
 
         let mut buf = Vec::new();
-        let mut err = None;
         loop {
-            match break_err!(block_code_prefix(self); -> err) {
+            match self.block_code_prefix() {
                 NoParse => {  // no prefix, check for emptiness
-                    self.mark().set();
-                    match break_err!(self.try_parse_empty_line(); -> err) {
-                        // non-empty line without prefix
-                        NoParse => { self.mark().reset(); break }
-                        // empty line without prefix, add newline
-                        _ => { self.mark().unset(); buf.push(b'\n') }
+                    let mut m = self.cur.mark();
+                    match self.try_parse_empty_line() {
+                        // non-empty line without prefix or end of buffer
+                        NoParse | End => break,
+                        // empty line without prefix, add newline to the result
+                        _ => { m.cancel(); buf.push(b'\n'); }
                     }
                 }
+                End => break,
                 // prefix is ok, read everything else
-                _ => { break_err!(self.read_line_pr(&mut buf); -> err); }
+                _ => { parse_or_break!(self.read_line_to(&mut buf)); }
             }
         }
 
-        self.consume();
-
         // TODO: handle UTF-8 decoding error
-        let result = BlockCode { tag: None, content: String::from_utf8(buf).unwrap() };
-        match err {
-            Some(e) => PartialSuccess(result, e),
-            None => Success(result)
-        }
+        BlockCode { tag: None, content: String::from_utf8(buf).unwrap() };
     }
 }

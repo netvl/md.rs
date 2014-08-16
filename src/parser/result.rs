@@ -5,7 +5,8 @@ use std::str::SendStr;
 pub type MarkdownResult<T> = Result<T, MarkdownError>;
 
 pub enum MarkdownError {
-    ParseError(SendStr)
+    ParseError(SendStr),
+    EndOfDocument
 }
 
 impl fmt::Show for MarkdownError {

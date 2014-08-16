@@ -1,3 +1,12 @@
+use parser::{MarkdownParser, ParseResult, Success, End, NoParse};
+use tokens::*;
+use parser::inline::InlineParser;
+
+pub trait MiscParser {
+    fn parse_horizontal_rule(&self) -> ParseResult<Block>;
+    fn parse_paragraph(&self) -> ParseResult<Block>;
+}
+
 #[repr(u8)]
 #[deriving(FromPrimitive)]
 enum SetextHeaderLevel {
@@ -15,108 +24,113 @@ impl SetextHeaderLevel {
     }
 }
 
-impl MarkdownParser {
-    fn horizontal_rule(&mut self) -> ParseResult<Block> {
+impl<'a> MiscParser for MarkdownParser<'a> {
+    fn parse_horizontal_rule(&self) -> ParseResult<Block> {
         debug!(">> trying hrule");
-        try_reset!(self; self.skip_initial_spaces());
+        parse_or_ret!(self.try_skip_initial_spaces());
 
-        let mut c = iotry_err!(self.read_byte()).unwrap();
-        if c == b'-' || c == b'*' || c == b'_' {
-            loop {
-                match iotry_err!(self.read_byte()).unwrap() {
-                    b'\n' => break,
-                    b' ' => c = b' ',  // from now on everything should be spaces
-                    cc if cc == c => {}
-                    _ => { self.backtrack(); return NoParse }
+        let mut m = self.cur.mark();
+        match self.cur.next_byte() {
+            Some(mut c) if one_of!(c, b'-', b'*', b'_')  => {
+                loop {
+                    match self.cur.next_byte() {
+                        Some(b'\n') | None => break,
+                        Some(b' ') => c = b' ',  // from now on everything should be spaces
+                        Some(cc) if cc == c => {}
+                        Some(_) => return NoParse
+                    }
                 }
+                Success(HorizontalRule)
             }
-            self.consume();
-            Success(HorizontalRule)
-        } else {
-            self.backtrack();
-            NoParse
+            Some(_) => NoParse,
+            None => End
         }
     }
 
-    fn paragraph(&mut self) -> ParseResult<Block> {
+    fn parse_paragraph(&self) -> ParseResult<Block> {
         debug!(">> reading paragraph");
 
-        let mut buf = Vec::new();
-        let mut err0 = None;
+        let pm = self.cur.phantom_mark();
+        let mut pm_last = pm;
         let mut level = None;
+
         loop {
-            break_err!(self.read_line_pr(&mut buf); -> err0);
+            parse_or_break!(self.read_line());
+            pm_last = self.cur.phantom_mark();
 
             // empty line means paragraph end
-            match break_err!(self.try_parse_empty_line(); -> err0) {
-                Success(_) => break,
-                _ => {}
+            match self.try_parse_empty_line() {
+                Success(_) | End => break,
+                NoParse => {}
             }
 
             // header line means that the paragraph ended, and its last line
             // should be parsed as a heading
-            match break_err!(self.try_parse_header_line(); -> err0) {
+            match self.try_parse_header_line() {
                 Success(r) => { level = Some(r); break }
-                _ => {}
+                End => break,  // End is in fact impossible here
+                NoParse => {}
             }
 
             // TODO: check for atx header, hrule or quote
 
-            // TODO: lax spacing rules: check for list/html block/code fence
+            // TODO: lax spacing rules: check for list/html, block/code fence or quote
         }
+
+        let mut buf = pm.slice_to(&pm_last);
 
         match level {
             // extract last line from the buffer
             Some(level) => {
-                // unwrap is safe because buf will contain at least one
-                // line in this case
+                // unwrap is safe because buf will contain at least one line in this case
                 let nl_idx = buf.as_slice().rposition_elem(&b'\n').unwrap();
-                let head_content = buf.slice_from(nl_idx+1).to_vec();
-                buf.truncate(nl_idx+1);
+                let head_content = buf.slice_from(nl_idx+1);
 
-                self.push_existing(head_content);
-                let result = self.inline();
-                self.pop_buf();
+                let subp = MarkdownParser::new(head_content);
+                let result = subp.parse_inline();
 
-                let heading_result = result.map(|r| Heading {
+                let heading_result = Heading {
                     level: level.to_numeric(),
-                    content: r
-                });
-                self.event_queue.push(heading_result.to_md_result());
+                    content: result
+                };
+
+                buf = buf.slice_to(nl_idx+1);
+                self.event_queue.borrow_mut().push(heading_result);
             }
             None => {}
         }
 
-        self.push_existing(buf);
-        let result = self.inline();
-        self.pop_buf();
-        self.consume();
+        let subp = MarkdownParser::new(buf);
+        let result = subp.parse_inline();
 
-        match (err0, result) {
-            (Some(e), Success(r)) => PartialSuccess(Paragraph(r), e),
-            (Some(e), PartialSuccess(r, _)) => PartialSuccess(Paragraph(r), e),
-            (Some(e), _) => Failure(e),
-            (None, r) => r.map(Paragraph)
-        }
+        Success(Paragraph(result))
     }
+}
 
-    fn try_parse_header_line(&mut self) -> ParseResult<SetextHeaderLevel> {
-        self.mark().set();
+trait Ops {
+    fn try_parse_header_line(&self) -> ParseResult<SetextHeaderLevel>;
+}
 
-        // TODO: is it important that the mark can be left set?
-        let mut cc = match iotry_err!(self.read_byte()).unwrap() {
-            c if c == b'=' || c == b'-' => c,
-            _ => { self.mark().reset(); return NoParse }
+impl<'a> Ops for MarkdownParser<'a> {
+    fn try_parse_header_line(&self) -> ParseResult<SetextHeaderLevel> {
+        let mut m = self.cur.mark();
+
+        let mut cc = match self.cur.next_byte() {
+            Some(c) if one_of!(c, b'=', b'-') => c,
+            Some(_) => return NoParse,
+            None => return End
         };
-        let level = FromPrimitive::from_u8(cc).unwrap();
+        let level = FromPrimitive::from_u8(cc).unwrap();  // unwrap is safe due to check above
 
         loop {
-            match iotry_err!(self.read_byte()).unwrap() {
-                c if c == cc => {},
-                b' ' => cc = b' ',  // consume only spaces from now on
-                b'\n' => { self.mark().unset(); return Success(level) },
-                _ => { self.mark().reset(); return NoParse }
+            match self.cur.next_byte() {
+                None | Some(b'\n') => break,
+                Some(c) if c == cc => {},
+                Some(b' ') => cc = b' ',  // consume only spaces from now on
+                Some(_) => return NoParse
             }
         }
+        m.cancel();
+        Success(level)
     }
 }

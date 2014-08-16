@@ -1,12 +1,14 @@
+use std::cell::{RefCell, Cell};
+
+use collections::Deque;
 use collections::ringbuf::RingBuf;
 
 pub use tokens::*;
 
-use util::CellOps;
+use self::block::BlockParser;
+use self::inline::InlineParser;
 
-mod block;
-mod inline;
-mod result;
+use util::CellOps;
 
 macro_rules! first_of(
     ($e:expr) => ($e);
@@ -19,7 +21,80 @@ macro_rules! opt_ret_end(
     ($e:expr) => (
         match $e {
             None => return End,
-            Some(c) => c
+            Some(r) => r
+        }
+    )
+)
+
+macro_rules! opt_break(
+    ($e:expr) => (
+        match $e {
+            None => break,
+            Some(r) => r
+        }
+    )
+)
+
+macro_rules! opt_ret(
+    ($e:expr) => (
+        match $e {
+            None => return None,
+            Some(r) => r
+        }
+    )
+)
+
+macro_rules! parse_or_ret(
+    ($e:expr) => (
+        match $e {
+            NoParse => return NoParse,
+            End => return End,
+            Success(r) => r
+        }
+    )
+)
+
+macro_rules! parse_or_break(
+    ($e:expr) => (
+        match $e {
+            NoParse | End => break,
+            o => o
+        }
+    )
+)
+
+macro_rules! break_on_end(
+    ($e:expr) => (
+        match $e {
+            End => break,
+            o => o
+        }
+    )
+)
+
+macro_rules! on_end(
+    ($e:expr <- $($a:expr);+) => (
+        match $e {
+            End => { $($a);+ }
+            o => o
+        }
+    )
+)
+
+macro_rules! ret_on_end(
+    ($e:expr) => (
+        match $e {
+            End => return End,
+            o => o
+        }
+    )
+)
+
+macro_rules! break_end(
+    ($e:expr) => (
+        match $e {
+            End => break,
+            o => o
         }
     )
 )
@@ -35,7 +110,7 @@ macro_rules! parse_error(
 
 macro_rules! try_reset(
     ($_self:ident; $e:expr) => ({
-        let m = $_self.cur().mark();
+        let m = $_self.cur.mark();
         match $e {
             NoParse => return NoParse,
             End => cancel!(m; return End),
@@ -45,19 +120,26 @@ macro_rules! try_reset(
     })
 )
 
+mod block;
+mod inline;
+mod result;
+
+// Cursor employs inner mutability to support RAII marks.
+// Parser employs inner mutability as a consequence of this.
+
 struct Cursor<'a> {
     buf: &'a [u8],
     pos: Cell<uint>
 }
 
-impl Deref<u8> for Cursor {
+impl<'a> Deref<u8> for Cursor<'a> {
     #[inline]
     fn deref(&self) -> &u8 {
-        &self.buf[self.pos]
+        &self.buf[self.pos.get()]
     }
 }
 
-impl Cursor {
+impl<'a> Cursor<'a> {
     fn new(buf: &[u8]) -> Cursor {
         Cursor {
             buf: buf,
@@ -68,14 +150,28 @@ impl Cursor {
     #[inline]
     fn available(&self) -> bool { self.pos.get() < self.buf.len() }
     
+    // TODO: rename to unsafe_advance? it does not check for buffer end
     #[inline]
-    fn advance(&mut self, n: uint) { self.pos.modify(|p| p + n); }
+    fn advance(&self, n: uint) { self.pos.modify(|p| p + n); }
 
     #[inline]
-    fn retract(&mut self, n: uint) { self.pos.modify(|p| if n > p { 0 } else { p - n }); }
+    fn retract(&self, n: uint) { self.pos.modify(|p| if n > p { 0 } else { p - n }); }
 
     #[inline]
-    fn next(&mut self) -> Option<u8> { 
+    fn next(&self) -> bool {
+        if self.available() {
+            self.advance(1);
+            true
+        } else {
+            false
+        }
+    }
+
+    #[inline]
+    fn prev(&self) { self.retract(1); }
+
+    #[inline]
+    fn next_byte(&self) -> Option<u8> { 
         if self.available() {
             let r = **self; 
             self.advance(1);
@@ -86,13 +182,42 @@ impl Cursor {
     }
 
     #[inline]
-    fn prev(&mut self) -> u8 { self.retract(1); **self }
+    fn prev_byte(&self) -> u8 { self.retract(1); **self }
 
     #[inline]
-    fn reset(&mut self) { self.pos.set(0); }
+    fn reset(&self) { self.pos.set(0); }
 
     #[inline]
-    fn mark(&self) -> Mark { Mark { cur: self, pos: self.pos, cancelled: false } }
+    fn phantom_mark(&self) -> PhantomMark {
+        PhantomMark { cur: self, pos: self.pos.get() }
+    }
+
+    #[inline]
+    fn mark(&self) -> Mark { 
+        Mark { cur: self, pos: self.pos.get(), cancelled: false }
+    }
+}
+
+struct PhantomMark<'b, 'a> {
+    cur: &'b Cursor<'a>,
+    pos: uint
+}
+
+impl<'b, 'a> PhantomMark<'b, 'a> {
+    #[inline]
+    fn slice_to_now(&self) -> &'a [u8] {
+        self.cur.buf.slice(self.pos, self.cur.pos.get())
+    }
+
+    #[inline]
+    fn slice_to(&self, other: &PhantomMark<'b, 'a>) -> &'a [u8] {
+        self.cur.buf.slice(self.pos, other.pos)
+    }
+
+    #[inline]
+    fn same_pos_as(&self, other: &PhantomMark) -> bool {
+        self.pos == other.pos
+    }
 }
 
 struct Mark<'b, 'a> {
@@ -101,70 +226,65 @@ struct Mark<'b, 'a> {
     cancelled: bool
 }
 
-impl Drop for Mark<'b, 'a> {
+impl<'b, 'a> Drop for Mark<'b, 'a> {
     fn drop(&mut self) {
-        if !cancelled {
+        if !self.cancelled {
             self.cur.pos.set(self.pos);
         }
     }
 }
 
-impl Mark {
+impl<'b, 'a> Mark<'b, 'a> {
     #[inline]
     fn cancel(&mut self) { self.cancelled = true; }
+
+    #[inline]
+    fn reset(self) {}  // just invoke the destructor
 }
 
 pub struct MarkdownParser<'a> {
-    cur_stack: Vec<Cursor<'a>>,
-    event_queue: RingBuf<MarkdownResult<Block>>
+    cur: Cursor<'a>,
+    event_queue: RefCell<RingBuf<Block>>
 }
 
-impl MarkdownParser {
+// public methods
+impl<'a> MarkdownParser<'a> {
+    #[inline]
     pub fn new(buffer: &[u8]) -> MarkdownParser {
         MarkdownParser {
-            cur_stack: vec![Cursor::new(buffer)],
-            event_queue: RingBuf::new()
+            cur: Cursor::new(buffer),
+            event_queue: RefCell::new(RingBuf::new())
         }
     }
 
-    pub fn tokens(self) -> MarkdownTokens<R> {
-        MarkdownTokens { parser: self }
-    }
-
     #[inline]
-    pub fn next(&mut self) -> MarkdownResult<Block> { 
-        self.event_queue.pop_front().unwrap_or_else(|| {
-            let result = self.parse_block().to_md_result();
-            if self.event_queue.len() > 0 { // recent parse has added elements to the queue
-                self.event_queue.push(result);
-                self.event_queue.pop_front().unwrap()
-            } else {
-                result
-            }
+    pub fn read_all(&mut self) -> Document {
+        self.collect()
+    }
+}
+
+impl<'a> Iterator<Block> for MarkdownParser<'a> {
+    pub fn next(&mut self) -> Option<Block> { 
+        self.event_queue.borrow_mut().pop_front().or_else(|| {
+            self.parse_block().to_option().and_then(|result| {
+                let e_q = self.event_queue.borrow_mut();
+                if e_q.len() > 0 { // recent parse has added elements to the queue
+                    e_q.push(result);
+                    e_q.pop_front().unwrap()
+                } else {
+                    result
+                }
+            })
         })
     }
+}
 
-    #[inline]
-    fn cur(&self) -> Cursor {
-        self.cur_stack.last().expect("impossible happened, empty cursor stack")
-    }
-
-    fn read_while_possible(&mut self) -> (Document, Option<MarkdownError>) {
-        let mut result = Vec::new();
+// private methods
+impl<'a> MarkdownParser<'a> {
+    fn try_parse_empty_line(&self) -> ParseResult<()> {
+        let mut m = self.cur.mark();
         loop {
-            match self.parse_block() {
-                Success(token) => result.push(token),
-                Failure(err) => return (result, Some(err)),
-                End => return (result, None),
-                NoParse => fail!("unexpected NoParse"),
-            }
-        }
-    }
-
-    fn try_parse_empty_line(&mut self) -> ParseResult<()> {
-        let mut m = self.cur().mark();
-        loop {
-            match opt_ret_end!(self.cur().next()) {
+            match opt_ret_end!(self.cur.next_byte()) {
                 b' ' => {}
                 b'\n' => { m.cancel(); return Success(()) }
                 _ => return NoParse
@@ -172,38 +292,72 @@ impl MarkdownParser {
         }
     }
 
-    fn try_skip_initial_spaces(&mut self) -> ParseResult<()> {
+    fn try_skip_initial_spaces(&self) -> ParseResult<()> {
         let mut n: u8 = 0;
-        let mut m = self.cur().mark();
-        while self.cur().available() {
+        let mut m = self.cur.mark();
+        while self.cur.available() {
             if n >= 4 {
                 return NoParse;
             }
-            match *self.cur() {
-                b' ' => { n += 1; self.cur().next(); }  // increase counter and continue
+            match *self.cur {
+                b' ' => { n += 1; self.cur.next(); }  // increase counter and continue
                 _ => { m.cancel(); return Success(()); },  // not a space and less than 4 spaces
             }
         }
+        End
     }
 
-    fn skip_spaces(&mut self) -> ParseResult<()> {
-        while self.cur().available() {
-            match *self.cur() {
-                b' ' => { self.cur.next(); }
-                _ => 
-            }
+    fn try_read_char(&self, expected: u8) -> ParseResult<()> {
+        match self.cur.next_byte() {
+            Some(c) if c == expected => Success(()),
+            Some(_) => { self.cur.prev(); NoParse },
+            None => End
         }
     }
-}
 
-pub struct MarkdownTokens<'a> {
-    parser: MarkdownParser<'a>
-}
+    fn read_line_to(&self, dest: &mut Vec<u8>) -> ParseResult<()> {
+        if !self.cur.available() { return End }
 
-impl<'a> Iterator<Block> for MarkdownTokens<'a> {
-    #[inline]
-    fn next(&mut self) -> Option<Block> {
-        self.parser.next().ok()
+        while {
+            let c = *self.cur; self.cur.next();
+            dest.push(c);
+
+            if c == b'\n' {
+                return Success(());
+            }
+            
+            self.cur.available() 
+        } {}
+        Success(())
+    }
+
+    fn read_line(&self) -> ParseResult<()> {
+        if !self.cur.available() { return End }
+
+        while {
+            let c = *self.cur; self.cur.next();
+
+            if *self.cur == b'\n' {
+                return Success(())
+            }
+
+            self.cur.available()
+        } {}
+        Success(())
+    }
+
+    fn skip_spaces(&self) -> ParseResult<()> {
+        if !self.cur.available() { return End }
+
+        while {
+            match *self.cur {
+                b' ' => {}
+                _ => return Success(())
+            }
+            
+            self.cur.available() 
+        } {}
+        Success(())
     }
 }
 
@@ -224,19 +378,63 @@ impl CharOps for u8 {
     }
 }
 
+trait OptionOps<T> {
+    fn to_parse_result(self) -> ParseResult<T>;
+}
+
 enum ParseResult<T> {
     Success(T),
-    Failure(MarkdownError),
     NoParse,
     End
 }
 
 impl<T> ParseResult<T> {
-    fn to_result(self) -> MarkdownResult<T> {
+    fn or_else(self, f: || -> ParseResult<T>) -> ParseResult<T> {
         match self {
-            Success(r) => Ok(r),
-            Failure(e) => Err(e),
-            NoParse | End => fail!("programming error, End/NoParse is converted to result")
+            Success(r) => Success(r),
+            End => End,
+            NoParse => f()
+        }
+    }
+
+    fn map<U>(self, f: |T| -> U) -> ParseResult<U> {
+        match self {
+            Success(r) => Success(f(r)),
+            End => End,
+            NoParse => NoParse
+        }
+    }
+
+    #[inline]
+    fn unwrap(self) -> T {
+        match self {
+            Success(r) => r,
+            End => fail!("End unwrap"),
+            NoParse => fail!("NoParse unwrap")
+        }
+    }
+
+    #[inline]
+    fn is_success(&self) -> bool {
+        match *self {
+            Success(_) => true,
+            _ => false
+        }
+    }
+
+    #[inline]
+    fn is_end(&self) -> bool {
+        match *self {
+            End => true,
+            _ => false
+        }
+    }
+
+    fn to_option(self) -> Option<T> {
+        match self {
+            Success(r) => Some(r),
+            End => None,
+            NoParse => fail!("programming error, NoParse is converted to result")
         }
     }
 }
