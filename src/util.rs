@@ -1,6 +1,6 @@
 use std::cell::Cell;
 
-trait CellOps<T> {
+pub trait CellOps<T> {
     fn modify(&self, f: |T| -> T);
 }
 
@@ -10,7 +10,7 @@ impl<T: Copy> CellOps<T> for Cell<T> {
     }
 }
 
-trait CharOps {
+pub trait CharOps {
     fn is_emphasis(self) -> bool;
     fn is_code(self) -> bool;
 }

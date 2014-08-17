@@ -11,10 +11,11 @@ fn main() {
         return;
     }
 
-    let f = File::open(&Path::new(args[1].as_slice()));
-    let p = MarkdownParser::new(f);
+    let mut f = File::open(&Path::new(args[1].as_slice()));
+    let buf = f.read_to_end().unwrap();
+    let mut p = MarkdownParser::new(buf.as_slice());
 
-    for t in p.tokens() {
+    for t in p {
         println!("Read token: {}", t);
     }
 }

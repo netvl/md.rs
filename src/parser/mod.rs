@@ -6,7 +6,6 @@ use collections::ringbuf::RingBuf;
 pub use tokens::*;
 
 use self::block::BlockParser;
-use self::inline::InlineParser;
 
 use util::CellOps;
 
@@ -73,7 +72,7 @@ macro_rules! break_on_end(
 )
 
 macro_rules! on_end(
-    ($e:expr <- $($a:expr);+) => (
+    ($e:expr -> $($a:expr);+) => (
         match $e {
             End => { $($a);+ }
             o => o
@@ -90,7 +89,7 @@ macro_rules! ret_on_end(
     )
 )
 
-macro_rules! break_end(
+macro_rules! break_on_end(
     ($e:expr) => (
         match $e {
             End => break,
@@ -122,7 +121,6 @@ macro_rules! try_reset(
 
 mod block;
 mod inline;
-mod result;
 
 // Cursor employs inner mutability to support RAII marks.
 // Parser employs inner mutability as a consequence of this.
@@ -185,39 +183,34 @@ impl<'a> Cursor<'a> {
     fn prev_byte(&self) -> u8 { self.retract(1); **self }
 
     #[inline]
-    fn reset(&self) { self.pos.set(0); }
+    fn phantom_mark(&self) -> PhantomMark {
+        PhantomMark { pos: self.pos.get() }
+    }
 
     #[inline]
-    fn phantom_mark(&self) -> PhantomMark {
-        PhantomMark { cur: self, pos: self.pos.get() }
+    fn valid(&self, pm: PhantomMark) -> bool {
+        pm.pos <= self.buf.len()
     }
 
     #[inline]
     fn mark(&self) -> Mark { 
         Mark { cur: self, pos: self.pos.get(), cancelled: false }
     }
+
+    #[inline]
+    fn slice(&self, left: PhantomMark, right: PhantomMark) -> &[u8] {
+        self.buf.slice(left.pos, right.pos)
+    }
+
+    #[inline]
+    fn slice_to_now_from(&self, pm: PhantomMark) -> &[u8] {
+        self.buf.slice(pm.pos, self.pos.get())
+    }
 }
 
-struct PhantomMark<'b, 'a> {
-    cur: &'b Cursor<'a>,
+#[deriving(PartialEq, Eq)]
+struct PhantomMark {
     pos: uint
-}
-
-impl<'b, 'a> PhantomMark<'b, 'a> {
-    #[inline]
-    fn slice_to_now(&self) -> &'a [u8] {
-        self.cur.buf.slice(self.pos, self.cur.pos.get())
-    }
-
-    #[inline]
-    fn slice_to(&self, other: &PhantomMark<'b, 'a>) -> &'a [u8] {
-        self.cur.buf.slice(self.pos, other.pos)
-    }
-
-    #[inline]
-    fn same_pos_as(&self, other: &PhantomMark) -> bool {
-        self.pos == other.pos
-    }
 }
 
 struct Mark<'b, 'a> {
@@ -226,6 +219,7 @@ struct Mark<'b, 'a> {
     cancelled: bool
 }
 
+#[unsafe_destructor]
 impl<'b, 'a> Drop for Mark<'b, 'a> {
     fn drop(&mut self) {
         if !self.cancelled {
@@ -264,10 +258,11 @@ impl<'a> MarkdownParser<'a> {
 }
 
 impl<'a> Iterator<Block> for MarkdownParser<'a> {
-    pub fn next(&mut self) -> Option<Block> { 
-        self.event_queue.borrow_mut().pop_front().or_else(|| {
-            self.parse_block().to_option().and_then(|result| {
-                let e_q = self.event_queue.borrow_mut();
+    fn next(&mut self) -> Option<Block> { 
+        let front = self.event_queue.borrow_mut().pop_front();
+        front.or_else(|| {
+            self.parse_block().to_option().map(|result| {
+                let mut e_q = self.event_queue.borrow_mut();
                 if e_q.len() > 0 { // recent parse has added elements to the queue
                     e_q.push(result);
                     e_q.pop_front().unwrap()
@@ -337,7 +332,7 @@ impl<'a> MarkdownParser<'a> {
         while {
             let c = *self.cur; self.cur.next();
 
-            if *self.cur == b'\n' {
+            if c == b'\n' {
                 return Success(())
             }
 
@@ -350,8 +345,10 @@ impl<'a> MarkdownParser<'a> {
         if !self.cur.available() { return End }
 
         while {
-            match *self.cur {
-                b' ' => {}
+            let c = *self.cur; 
+
+            match c {
+                b' ' => { self.cur.next(); }
                 _ => return Success(())
             }
             

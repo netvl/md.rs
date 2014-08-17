@@ -26,8 +26,10 @@ impl<'a> Ops for MarkdownParser<'a> {
 impl<'a> BlockCodeParser for MarkdownParser<'a> {
     fn parse_block_code(&self) -> ParseResult<Block> {
         debug!(">> trying code block");
+
+        let m = self.cur.mark();
         parse_or_ret!(self.block_code_prefix());
-        self.cur.reset();
+        m.reset();
 
         let mut buf = Vec::new();
         loop {
@@ -48,6 +50,6 @@ impl<'a> BlockCodeParser for MarkdownParser<'a> {
         }
 
         // TODO: handle UTF-8 decoding error
-        BlockCode { tag: None, content: String::from_utf8(buf).unwrap() };
+        Success(BlockCode { tag: None, content: String::from_utf8(buf).unwrap() })
     }
 }

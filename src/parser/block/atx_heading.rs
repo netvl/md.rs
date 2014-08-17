@@ -13,30 +13,37 @@ impl<'a> AtxHeadingParser for MarkdownParser<'a> {
         self.cur.prev();
 
         // read and count hashes
-        let mut n = 0;
-        while n < 6 {
+        debug!(">> counting hashes");
+        let mut level = 0;
+        while level < 6 {
             match self.cur.next_byte() {
-                Some(b'#') => n += 1,
-                Some(_) | None => { self.cur.prev(); break }
+                Some(b'#') => level += 1,
+                Some(_) => { self.cur.prev(); break }
+                None => break
             }
         }
-
-        let pm = self.cur.phantom_mark();
+        debug!(">> hashes: {}", level);
 
         // skip spaces after hashes
         // short-circuit if the document ends here
+        debug!(">> skipping spaces");
         if self.skip_spaces().is_end() {
             return Success(Heading {
-                level: n,
+                level: level,
                 content: Vec::new()
             });
         }
 
-        // read the rest of the line
-        self.read_line();
-        let buf = pm.slice_to_now();
-        let buf = buf.slice_to(buf.len()-1);  // remove newline
+        let pm = self.cur.phantom_mark();
 
+        // read the rest of the line
+        debug!(">> reading rest of the line");
+        self.read_line();
+        let buf = self.cur.slice_to_now_from(pm);
+        let buf = buf.slice_to(buf.len()-1);  // remove newline
+        debug!(">> header line: {}", buf);
+
+        debug!(">> skipping ending hashes and spaces");
         // skip hashes and spaces backwards
         let mut n = buf.len();
         while n > 0 {
@@ -52,12 +59,14 @@ impl<'a> AtxHeadingParser for MarkdownParser<'a> {
             }
         }
 
+        debug!(">> parsing header inline content");
         // parse header contents
         let subp = MarkdownParser::new(buf.slice_to(n));
         let result = subp.parse_inline();
+        debug!(">> parsed: {}", result);
 
         Success(Heading {
-            level: n,
+            level: level,
             content: result
         })
     }

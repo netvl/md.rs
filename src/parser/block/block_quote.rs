@@ -21,12 +21,14 @@ impl<'a> Ops for MarkdownParser<'a> {
 impl<'a> BlockQuoteParser for MarkdownParser<'a> {
     fn parse_block_quote(&self) -> ParseResult<Block> {
         debug!(">> trying blockquote");
+
+        let m = self.cur.mark();
         parse_or_ret!(self.block_quote_prefix());
-        self.cur.reset();
+        m.reset();
 
         let mut buf = Vec::new();
         loop {
-            parse_or_break!(self.block_quote_prefix());
+            break_on_end!(self.block_quote_prefix());
             parse_or_break!(self.read_line_to(&mut buf));
 
             // break if there is an empty line followed by non-quote line after this line
@@ -43,7 +45,7 @@ impl<'a> BlockQuoteParser for MarkdownParser<'a> {
             }
         }
 
-        let subp = MarkdownParser::new(buf.as_slice());
+        let mut subp = MarkdownParser::new(buf.as_slice());
         let result = subp.read_all();
 
         Success(BlockQuote(result))

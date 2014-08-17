@@ -12,7 +12,7 @@ impl<'a> EscapeParser for MarkdownParser<'a> {
         match self.cur.next_byte() {
             Some(c) if ESCAPE_CHARS.contains(&c) => 
                 Success(Some(Chunk([c.to_ascii()].as_str_ascii().to_string()))),
-            Some(c) => Success(None),
+            Some(_) => Success(None),
             None => End
         }
     }

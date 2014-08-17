@@ -10,19 +10,20 @@ pub trait EmphasisParser {
 
 impl<'a> EmphasisParser for MarkdownParser<'a> {
     fn parse_emphasis(&self, ec: u8, n: uint) -> Option<Inline> {
+        debug!("reading emphasis, char [{}], n = {}", ec.to_ascii(), n);
         let pm = self.cur.phantom_mark();
         loop {
             // a marker over the first character of closing emphasis
             let pm_last = opt_ret!(self.until_emph_closing(ec, n));
-            let slice = pm.slice_to(&pm_last);
-            self.cur.advance(n);  // it is safe to advance by n here
+            let slice = self.cur.slice(pm, pm_last);
+            debug!("checking slice: [{}], n: {}", ::std::str::from_utf8(slice).unwrap(), n);
 
             // escaped closing emphasis
             if slice[slice.len()-1] != b' ' {
                 if ec.is_code() {  // this is code inline
                     return Some(Code(String::from_utf8(slice.to_vec()).unwrap()));
                 } else {
-                    let mut subp = MarkdownParser::new(slice);
+                    let subp = MarkdownParser::new(slice);
                     let result = subp.parse_inline();
                     
                     return Some(match n {
@@ -37,11 +38,11 @@ impl<'a> EmphasisParser for MarkdownParser<'a> {
 }
 
 trait Ops<'a> {
-    fn until_emph_closing<'b>(&'b self, ec: u8, n: uint) -> Option<PhantomMark<'b, 'a>>;
+    fn until_emph_closing(&self, ec: u8, n: uint) -> Option<PhantomMark>;
 }
 
 impl<'a> Ops<'a> for MarkdownParser<'a> {
-    fn until_emph_closing<'b>(&'b self, ec: u8, n: uint) -> Option<PhantomMark<'b, 'a>> {
+    fn until_emph_closing(&self, ec: u8, n: uint) -> Option<PhantomMark> {
         assert!(n > 0);  // need at least one emphasis character
 
         let pm = self.cur.phantom_mark();
@@ -58,15 +59,18 @@ impl<'a> Ops<'a> for MarkdownParser<'a> {
             match c {
                 // pass escaped characters as is
                 b'\\' => { advance!(); escaping = true }
-                c if escaping => { advance!(); escaping = false }
+                _ if escaping => { advance!(); escaping = false }
 
                 // found our emphasis character
                 c if c == ec => {
                     let mut m = self.cur.mark();
                     let mut rn = 1;
 
-                    while on_end!(self.try_read_char(ec) <- m.cancel(); advance!(); break).is_success() {
-                        rn += 1;
+                    loop {
+                        match self.try_read_char(ec) {
+                            Success(_) => rn += 1,
+                            _ => break
+                        }
                     }
 
                     if rn == n {  // this is our emphasis boundary, finish reading
@@ -114,6 +118,6 @@ impl<'a> Ops<'a> for MarkdownParser<'a> {
             }
         }
 
-        if pm_last.same_pos_as(&pm) { None } else { Some(pm_last) }
+        if pm_last == pm { None } else { Some(pm_last) }
     }
 }

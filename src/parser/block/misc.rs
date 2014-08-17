@@ -40,6 +40,7 @@ impl<'a> MiscParser for MarkdownParser<'a> {
                         Some(_) => return NoParse
                     }
                 }
+                m.cancel();
                 Success(HorizontalRule)
             }
             Some(_) => NoParse,
@@ -77,7 +78,7 @@ impl<'a> MiscParser for MarkdownParser<'a> {
             // TODO: lax spacing rules: check for list/html, block/code fence or quote
         }
 
-        let mut buf = pm.slice_to(&pm_last);
+        let mut buf = self.cur.slice(pm, pm_last);
 
         match level {
             // extract last line from the buffer
