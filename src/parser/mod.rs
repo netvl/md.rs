@@ -3,7 +3,8 @@ use std::cell::{RefCell, Cell};
 use collections::Deque;
 use collections::ringbuf::RingBuf;
 
-pub use tokens::*;
+pub use self::config::*;
+use tokens::*;
 
 use self::block::BlockParser;
 
@@ -118,6 +119,8 @@ macro_rules! try_reset(
         }
     })
 )
+
+pub mod config;
 
 mod block;
 mod inline;
@@ -238,7 +241,8 @@ impl<'b, 'a> Mark<'b, 'a> {
 
 pub struct MarkdownParser<'a> {
     cur: Cursor<'a>,
-    event_queue: RefCell<RingBuf<Block>>
+    event_queue: RefCell<RingBuf<Block>>,
+    config: MarkdownConfig
 }
 
 // public methods
@@ -247,8 +251,15 @@ impl<'a> MarkdownParser<'a> {
     pub fn new(buffer: &[u8]) -> MarkdownParser {
         MarkdownParser {
             cur: Cursor::new(buffer),
-            event_queue: RefCell::new(RingBuf::new())
+            event_queue: RefCell::new(RingBuf::new()),
+            config: MarkdownConfig::default()
         }
+    }
+
+    #[inline]
+    pub fn with_config(mut self, config: MarkdownConfig) -> MarkdownParser<'a> {
+        self.config = config;
+        self
     }
 
     #[inline]
@@ -260,17 +271,7 @@ impl<'a> MarkdownParser<'a> {
 impl<'a> Iterator<Block> for MarkdownParser<'a> {
     fn next(&mut self) -> Option<Block> { 
         let front = self.event_queue.borrow_mut().pop_front();
-        front.or_else(|| {
-            self.parse_block().to_option().map(|result| {
-                let mut e_q = self.event_queue.borrow_mut();
-                if e_q.len() > 0 { // recent parse has added elements to the queue
-                    e_q.push(result);
-                    e_q.pop_front().unwrap()
-                } else {
-                    result
-                }
-            })
-        })
+        front.or_else(|| self.parse_block().to_option())
     }
 }
 

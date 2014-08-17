@@ -1,4 +1,4 @@
-use parser::{MarkdownParser, Cursor, PhantomMark, ParseResult, Success, End, NoParse};
+use parser::{MarkdownParser, MarkdownConfig, Cursor, PhantomMark, ParseResult, Success, End, NoParse};
 use tokens::*;
 use util::CharOps;
 
@@ -15,6 +15,7 @@ pub trait InlineParser {
 struct InlineParsingState<'b, 'a> {
     tokens: Vec<Inline>,
     cur: &'b Cursor<'a>,
+    config: &'b MarkdownConfig,
     pm: PhantomMark,
     pm_last: PhantomMark
 }
@@ -26,12 +27,27 @@ impl<'b, 'a> InlineParsingState<'b, 'a> {
         self.pm_last = self.pm;
     }
 
-    fn push_token(&mut self, token: Inline) {
+    fn push_token(&mut self, mut token: Inline) {
         fn is_chunk(token: Option<&Inline>) -> bool {
             match token {
                 Some(&Chunk(_)) => true,
                 _ => false
             }
+        }
+
+        match token {
+            // remove trailing newlines from chunks
+            Chunk(ref mut buf) if self.config.trim_newlines =>
+                while buf.len() > 0 && buf.as_slice().chars().rev().next().unwrap() == '\n' {
+                    buf.pop_char();
+                },
+            _ => {}
+        }
+
+        // ignore empty chunks
+        match token {
+            Chunk(ref buf) if buf.is_empty() => return,
+            _ => {}
         }
 
         match token {
@@ -56,7 +72,7 @@ impl<'b, 'a> InlineParsingState<'b, 'a> {
 
             let chunk = slice.to_vec();
             // TODO: handle UTF-8 decoding error
-            self.tokens.push(Chunk(String::from_utf8(chunk).unwrap()));
+            self.push_token(Chunk(String::from_utf8(chunk).unwrap()));
         }
 
         self.update();
@@ -77,6 +93,7 @@ impl<'a> InlineParser for MarkdownParser<'a> {
         let mut s = InlineParsingState {
             tokens: Vec::new(),
             cur: &self.cur,
+            config: &self.config,
             pm: self.cur.phantom_mark(),
             pm_last: self.cur.phantom_mark()
         };

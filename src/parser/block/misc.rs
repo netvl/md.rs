@@ -1,3 +1,5 @@
+use collections::Deque;
+
 use parser::{MarkdownParser, ParseResult, Success, End, NoParse};
 use tokens::*;
 use parser::inline::InlineParser;
@@ -79,13 +81,19 @@ impl<'a> MiscParser for MarkdownParser<'a> {
         }
 
         let mut buf = self.cur.slice(pm, pm_last);
+        debug!("read paragraph, contents: [{}]", ::std::str::from_utf8(buf).unwrap());
 
         match level {
             // extract last line from the buffer
             Some(level) => {
-                // unwrap is safe because buf will contain at least one line in this case
-                let nl_idx = buf.as_slice().rposition_elem(&b'\n').unwrap();
-                let head_content = buf.slice_from(nl_idx+1);
+                debug!("found setext header of level {}", level.to_numeric());
+
+                // ignore last newline which is always there
+                let sbuf = if buf.ends_with(b"\n") { buf.slice_to(buf.len()-1) } else { buf };
+
+                // last newline or start of the block
+                let after_nl_idx = sbuf.rposition_elem(&b'\n').map(|i| i + 1).unwrap_or(0);
+                let head_content = sbuf.slice_from(after_nl_idx);
 
                 let subp = MarkdownParser::new(head_content);
                 let result = subp.parse_inline();
@@ -95,8 +103,13 @@ impl<'a> MiscParser for MarkdownParser<'a> {
                     content: result
                 };
 
-                buf = buf.slice_to(nl_idx+1);
-                self.event_queue.borrow_mut().push(heading_result);
+                buf = buf.slice_to(after_nl_idx);
+
+                if buf.is_empty() {
+                    return Success(heading_result);
+                } else {
+                    self.event_queue.borrow_mut().push(heading_result);
+                }
             }
             None => {}
         }
