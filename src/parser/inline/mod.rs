@@ -1,4 +1,4 @@
-use parser::{MarkdownParser, MarkdownConfig, Cursor, PhantomMark, ParseResult, Success, End, NoParse};
+use parser::{MarkdownParser, MarkdownConfig, Cursor, PhantomMark, End};
 use tokens::*;
 use util::CharOps;
 
@@ -121,9 +121,20 @@ impl<'a> InlineParser for MarkdownParser<'a> {
                         n += 1;
                     }
 
-                    let token = opt_break!(self.parse_emphasis(c, n));
-                    s.push_token(token);
-                    s.update();
+                    let m = self.cur.mark();
+                    match self.parse_emphasis(c, n) {
+                        Some(token) => { 
+                            m.cancel();
+                            s.push_token(token);
+                            s.update();
+                        }
+                        None => { 
+                            m.reset();
+                            self.cur.retract(n); 
+                            s.update();
+                            self.cur.advance(n);
+                        }
+                    }
                 }
 
                 // just advance

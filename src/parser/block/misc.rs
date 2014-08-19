@@ -1,5 +1,3 @@
-use collections::Deque;
-
 use parser::{MarkdownParser, ParseResult, Success, End, NoParse};
 use tokens::*;
 use parser::inline::InlineParser;
@@ -31,7 +29,7 @@ impl<'a> MiscParser for MarkdownParser<'a> {
         debug!(">> trying hrule");
         parse_or_ret!(self.try_skip_initial_spaces());
 
-        let mut m = self.cur.mark();
+        let m = self.cur.mark();
         match self.cur.next_byte() {
             Some(mut c) if one_of!(c, b'-', b'*', b'_')  => {
                 loop {
@@ -127,7 +125,7 @@ trait Ops {
 
 impl<'a> Ops for MarkdownParser<'a> {
     fn try_parse_header_line(&self) -> ParseResult<SetextHeaderLevel> {
-        let mut m = self.cur.mark();
+        let m = self.cur.mark();
 
         let mut cc = match self.cur.next_byte() {
             Some(c) if one_of!(c, b'=', b'-') => c,

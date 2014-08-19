@@ -1,4 +1,4 @@
-use parser::{MarkdownParser, ParseResult, Success, End, NoParse};
+use parser::{MarkdownParser, ParseResult, Success, End};
 use tokens::*;
 
 pub trait EscapeParser {

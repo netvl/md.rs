@@ -1,0 +1,11 @@
+[root]
+name = "mdrender"
+version = "0.1.0"
+dependencies = [
+ "md 0.1.0",
+]
+
+[[package]]
+name = "md"
+version = "0.1.0"
+

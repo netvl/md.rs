@@ -14,6 +14,8 @@ even inline `code blocks`  ``are allowed``
 
 they also handle **code `blocks`inside ``emphasis``**
 
+they ignore _emphasis [in_]   [links]_ yeah
+
 Setext headers
 also
 ----

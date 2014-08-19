@@ -1,4 +1,4 @@
-use parser::{MarkdownParser, ParseResult, Success, End, NoParse};
+use parser::{MarkdownParser, ParseResult, End};
 use tokens::*;
 
 use self::block_quote::BlockQuoteParser;

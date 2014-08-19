@@ -1,4 +1,4 @@
-use parser::{MarkdownParser, PhantomMark, ParseResult, Success, End, NoParse};
+use parser::{MarkdownParser, PhantomMark, Success, End};
 use tokens::*;
 use util::CharOps;
 
@@ -52,18 +52,29 @@ impl<'a> Ops<'a> for MarkdownParser<'a> {
         macro_rules! advance(
             () => (pm_last = self.cur.phantom_mark())
         )
+        macro_rules! retract(
+            () => (pm_last = pm)
+        )
 
         'outer: loop {
-            let c = opt_break!(self.cur.next_byte());
+            let c = match self.cur.next_byte() {
+                Some(c) => c,
+                None => return None  // if we're here then we haven't found the closing "brace"
+            };
             
             match c {
                 // pass escaped characters as is
-                b'\\' => { advance!(); escaping = true }
-                _ if escaping => { advance!(); escaping = false }
+                b'\\' => escaping = true,
+                _ if escaping => escaping = false,
 
                 // found our emphasis character
                 c if c == ec => {
-                    let mut m = self.cur.mark();
+                    // TODO: make something more pretty
+                    self.cur.prev();
+                    advance!();
+                    self.cur.next();
+
+                    let m = self.cur.mark();
                     let mut rn = 1;
 
                     loop {
@@ -79,42 +90,103 @@ impl<'a> Ops<'a> for MarkdownParser<'a> {
                     } else {  
                         // otherwise reset to the character just after the one 
                         // we have just read
+                        retract!();
                         m.reset();
-                        advance!();
                     }
                 }
 
                 // inline code block started, and we're not an inline code block ourselves
                 // we need to pass through this block as is
                 c if c == b'`' => {
-                    advance!();
-
                     // count `s
                     let mut sn = 1u;
                     while break_on_end!(self.try_read_char(b'`')).is_success() {
                         sn += 1;
                     }
+
+                    let mut ec_mark = None;
                     
                     // read until closing delimiter
                     let mut tn = 0;
                     while tn < sn {
                         match self.cur.next_byte() {
-                            Some(b) => {
-                                advance!();
-                                match b {
-                                    b'`' => tn += 1,
-                                    _    => tn = 0
+                            Some(b'`') => tn += 1,
+                            Some(cc) => {
+                                tn = 0;
+                                if cc == ec {
+                                    advance!();
+                                    ec_mark = Some(self.cur.mark());
                                 }
                             }
                             None => break 'outer
                         }
                     }
+
+                    retract!();
+                    ec_mark.map(|m| m.cancel());
                 }
 
-                // TODO: skip hyperlink
+                // skip hyperlinks
+                c if c == b'[' => {
+                    debug!("encountered link start");
+                    let mut ec_mark = None;
+
+                    // read until closing brace
+                    loop {
+                        match self.cur.next_byte() {
+                            Some(b']') => break,
+                            Some(c) if ec_mark.is_none() && c == ec && self.lookahead_chars(n-1, ec) => {
+                                debug!("encountered emphasis inside link, setting a mark");
+                                advance!();
+                                ec_mark = Some(self.cur.mark());
+                            }
+                            Some(_) => {}
+                            None => break 'outer
+                        }
+                    }
+                    debug!("read first link part, skipping whitespace");
+
+                    // skip whitespace between delimiting braces
+                    loop {
+                        match self.cur.next_byte() {
+                            Some(b' ') | Some(b'\n') => {}
+                            Some(_) => break,
+                            None => break 'outer
+                        }
+                    }
+                    self.cur.prev();
+                    debug!("skipped whitespace, current char: {}", self.cur.to_ascii());
+
+                    // determine closing brace for the second part of the link
+                    let cc = match *self.cur {
+                        b'[' => b']',
+                        b'(' => b')',
+                        _ => if ec_mark.is_some() { break 'outer } else { continue 'outer }
+                    };
+                    self.cur.next();
+
+                    debug!("expected closing character is {}, skipping rest of the link", cc.to_ascii());
+                    // skip second part of the link
+                    loop {
+                        match self.cur.next_byte() {
+                            Some(c) if c == cc => break,
+                            Some(c) if ec_mark.is_none() && c == ec && self.lookahead_chars(n-1, ec) => {
+                                debug!("encountered emphasis inside link second part, setting a mark");
+                                advance!();
+                                ec_mark = Some(self.cur.mark());
+                            }
+                            Some(_) => {}
+                            None => break 'outer
+                        }
+                    }
+                    debug!("everything skipped, resetting marks");
+
+                    retract!();
+                    ec_mark.map(|m| m.cancel());
+                }
 
                 // just pass through any other character
-                _ => advance!()
+                _ => {}
             }
         }
 

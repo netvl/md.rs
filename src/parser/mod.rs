@@ -233,7 +233,7 @@ impl<'b, 'a> Drop for Mark<'b, 'a> {
 
 impl<'b, 'a> Mark<'b, 'a> {
     #[inline]
-    fn cancel(&mut self) { self.cancelled = true; }
+    fn cancel(mut self) { self.cancelled = true; }
 
     #[inline]
     fn reset(self) {}  // just invoke the destructor
@@ -278,7 +278,7 @@ impl<'a> Iterator<Block> for MarkdownParser<'a> {
 // private methods
 impl<'a> MarkdownParser<'a> {
     fn try_parse_empty_line(&self) -> ParseResult<()> {
-        let mut m = self.cur.mark();
+        let m = self.cur.mark();
         loop {
             match opt_ret_end!(self.cur.next_byte()) {
                 b' ' => {}
@@ -290,7 +290,7 @@ impl<'a> MarkdownParser<'a> {
 
     fn try_skip_initial_spaces(&self) -> ParseResult<()> {
         let mut n: u8 = 0;
-        let mut m = self.cur.mark();
+        let m = self.cur.mark();
         while self.cur.available() {
             if n >= 4 {
                 return NoParse;
@@ -309,6 +309,17 @@ impl<'a> MarkdownParser<'a> {
             Some(_) => { self.cur.prev(); NoParse },
             None => End
         }
+    }
+
+    fn lookahead_chars(&self, mut n: uint, c: u8) -> bool {
+        let _m = self.cur.mark();
+        while n > 0 && self.cur.available() {
+            match *self.cur {
+                cc if cc == c => { self.cur.next(); n -= 1; }
+                _ => break
+            }
+        }
+        n == 0
     }
 
     fn read_line_to(&self, dest: &mut Vec<u8>) -> ParseResult<()> {

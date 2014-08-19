@@ -12,7 +12,7 @@ trait Ops {
 impl<'a> Ops for MarkdownParser<'a> {
     fn block_code_prefix(&self) -> ParseResult<()> {
         let mut n = 0u;
-        let mut m = self.cur.mark();
+        let m = self.cur.mark();
         loop {
             if n == 4 { break };
             parse_or_ret!(self.try_read_char(b' '));
@@ -35,7 +35,7 @@ impl<'a> BlockCodeParser for MarkdownParser<'a> {
         loop {
             match self.block_code_prefix() {
                 NoParse => {  // no prefix, check for emptiness
-                    let mut m = self.cur.mark();
+                    let m = self.cur.mark();
                     match self.try_parse_empty_line() {
                         // non-empty line without prefix or end of buffer
                         NoParse | End => break,
