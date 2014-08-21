@@ -147,14 +147,7 @@ impl<'a> Ops<'a> for MarkdownParser<'a> {
                     debug!("read first link part, skipping whitespace");
 
                     // skip whitespace between delimiting braces
-                    loop {
-                        match self.cur.next_byte() {
-                            Some(b' ') | Some(b'\n') => {}
-                            Some(_) => break,
-                            None => break 'outer
-                        }
-                    }
-                    self.cur.prev();
+                    parse_or_break!(self.skip_spaces_or_newlines());
                     debug!("skipped whitespace, current char: {}", self.cur.to_ascii());
 
                     // determine closing brace for the second part of the link

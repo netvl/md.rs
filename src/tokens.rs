@@ -44,12 +44,13 @@ pub enum Inline{
     Code(String),
 
     InlineLink {
-        pub title: Option<Text>,  // None for automatic links
-        pub link: String
+        pub text: Option<Text>,  // None for automatic links
+        pub link: String,
+        pub title: Option<String>
     },
 
     ReferenceLink {
-        pub title: String,
+        pub text: String,
         pub id: String
     }
 

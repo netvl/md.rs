@@ -187,6 +187,11 @@ impl<'a> Cursor<'a> {
     }
 
     #[inline]
+    fn peek_prev(&self) -> u8 {
+        self.buf[self.pos.get()-1]
+    }
+
+    #[inline]
     fn next_byte(&self) -> Option<u8> { 
         if self.available() {
             let r = **self; 
@@ -203,6 +208,11 @@ impl<'a> Cursor<'a> {
     #[inline]
     fn phantom_mark(&self) -> PhantomMark {
         PhantomMark { pos: self.pos.get() }
+    }
+
+    #[inline]
+    fn phantom_mark_at_prev(&self) -> PhantomMark {
+        PhantomMark { pos: self.pos.get()-1 }
     }
 
     #[inline]

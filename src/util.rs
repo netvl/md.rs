@@ -23,6 +23,10 @@ impl CharOps for u8 {
     fn is_code(self) -> bool {
         self == b'`'
     }
+
+    fn is_space(self) -> bool {
+        self == b' ' || self == b'\n'
+    }
 }
 
 pub trait ByteMatcher {
@@ -43,5 +47,26 @@ impl<'a> ByteMatcher for &'a [u8] {
     #[inline]
     fn matches(&mut self, b: &'a [u8]) -> bool {
         b.iter().any(|& mut c| c.matches(b))
+    }
+}
+
+pub trait ByteSliceOps {
+    fn trim_left<M: ByteMatcher>(&self, m: M) -> &[u8];
+    fn trim_right<M: ByteMatcher>(&self, m: M) -> &[u8];
+}
+
+impl<'a> ByteSliceOps for &'a [u8] {
+    fn trim_left<M: ByteMatcher>(&self, m: M) -> &[u8] {
+        match self.iter().position(|b| !m.matches(b)) {
+            None => &'static [],
+            Some(idx) => self.slice_from(idx)
+        }
+    }
+
+    fn trim_right<M: ByteMatcher>(&self, m: M) -> &[u8] {
+        match self.iter().rposition(|b| !m.matches(b)) {
+            None => &'static [],
+            Some(idx) => self.slice_to(idx+1)
+        }
     }
 }
