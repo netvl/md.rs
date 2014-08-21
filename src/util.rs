@@ -24,3 +24,24 @@ impl CharOps for u8 {
         self == b'`'
     }
 }
+
+pub trait ByteMatcher {
+    fn matches(&mut self, b: u8) -> bool;
+}
+
+impl<'a> ByteMatcher for |u8|:'a -> bool {
+    #[inline]
+    fn matches(&mut self, b: u8) -> bool { (*self)(b) }
+}
+
+impl ByteMatcher for u8 {
+    #[inline]
+    fn matches(&mut self, b: u8) -> bool { *self == b }
+}
+
+impl<'a> ByteMatcher for &'a [u8] {
+    #[inline]
+    fn matches(&mut self, b: &'a [u8]) -> bool {
+        b.iter().any(|& mut c| c.matches(b))
+    }
+}

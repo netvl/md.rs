@@ -8,7 +8,7 @@ use tokens::*;
 
 use self::block::BlockParser;
 
-use util::CellOps;
+use util::{CellOps, ByteMatcher};
 
 macro_rules! first_of(
     ($e:expr) => ($e);
@@ -49,6 +49,15 @@ macro_rules! parse_or_ret(
         match $e {
             NoParse => return NoParse,
             End => return End,
+            Success(r) => r
+        }
+    )
+)
+
+macro_rules! parse_or_ret_none(
+    ($e:expr) => (
+        match $e {
+            NoParse | End => return None,
             Success(r) => r
         }
     )
@@ -172,6 +181,12 @@ impl<'a> Cursor<'a> {
     fn prev(&self) { self.retract(1); }
 
     #[inline]
+    fn current_byte(&self) -> Option<u8> {
+        if self.available() { Some(*self) }
+        else { None }
+    }
+
+    #[inline]
     fn next_byte(&self) -> Option<u8> { 
         if self.available() {
             let r = **self; 
@@ -208,6 +223,11 @@ impl<'a> Cursor<'a> {
     #[inline]
     fn slice_to_now_from(&self, pm: PhantomMark) -> &[u8] {
         self.buf.slice(pm.pos, self.pos.get())
+    }
+
+    #[inlne]
+    fn slice_until_now_from(&self, pm: PhantomMark) -> &[u8] {
+        self.buf.slice(pm.pos, self.pos.get()-1)
     }
 }
 
@@ -353,21 +373,28 @@ impl<'a> MarkdownParser<'a> {
         Success(())
     }
 
-    fn skip_spaces(&self) -> ParseResult<()> {
+    fn skip<M: ByteMatcher>(&self, m: M) -> ParseResult<()> {
         if !self.cur.available() { return End }
 
         while {
-            let c = *self.cur; 
+            let c = *self.cur;
 
-            match c {
-                b' ' => { self.cur.next(); }
-                _ => return Success(())
+            if m.matches(c) {
+                self.cur.next();
+            } else {
+                return Success(());
             }
-            
-            self.cur.available() 
+
+            self.cur.available()
         } {}
         Success(())
     }
+
+    #[inline]
+    fn skip_spaces(&self) -> ParseResult<()> { self.skip(b' ') }
+
+    #[inline]
+    fn skip_spaces_and_newlines(&self) -> ParseResult<()> { self.skip(&[b' ', b'\n']) }
 }
 
 trait CharOps {

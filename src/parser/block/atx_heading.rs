@@ -39,8 +39,7 @@ impl<'a> AtxHeadingParser for MarkdownParser<'a> {
         // read the rest of the line
         debug!(">> reading rest of the line");
         self.read_line();
-        let buf = self.cur.slice_to_now_from(pm);
-        let buf = buf.slice_to(buf.len()-1);  // remove newline
+        let buf = self.cur.slice_until_now_from(pm);  // without newline
         debug!(">> header line: {}", buf);
 
         debug!(">> skipping ending hashes and spaces");
