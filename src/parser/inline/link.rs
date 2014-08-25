@@ -16,24 +16,28 @@ impl<'a> LinkParser for MarkdownParser<'a> {
         let mut escaping = false;
         let mut level = 1;
         loop {
-            match self.next_byte() {
-                Some(b'\\') => escaping = true,
-                Some(_) if escaping => escaping = false,
-                Some(b'[') => level += 1,
-                Some(b']') => {
+            let c = opt_ret!(self.next_byte());
+            match c {
+                b'\\' => escaping = true,
+                _ if escaping => escaping = false,
+                b'[' => level += 1,
+                b']' => {
                     level -= 1;
                     if level <= 0 { break; }
                 }
-                None => return None
+                _ => {}
             }
         }
 
         label = self.cur.slice_until_now_from(pm);
+        
+        // if this is shortcut link, we'll return here
+        let m = { m.cancel(); self.cur.mark() };  
 
         // TODO: footnote links?
 
         // skip spaces
-        parse_or_ret_none!(self.skip_spaces_or_newlines());
+        self.skip_spaces_or_newlines();
 
         let mut link = None;
         let mut title = None;
@@ -87,11 +91,20 @@ impl<'a> LinkParser for MarkdownParser<'a> {
                 
                 link = Some(
                     link_slice.trim_right(|b| b.is_space())
-                        .trim_left(b'<').trim_right(b'>')
+                        .trim_left_one(b'<').trim_right_one(b'>')
                 );
+
+                m.cancel();
             }
 
             Some(b'[') => {  // reference link
+                self.next();
+                let pm = self.cur.phantom_mark();
+
+                loop {
+                    let c = opt_ret!(self.next_byte());
+
+                }
             }
 
             _ => {  // shortcut reference link

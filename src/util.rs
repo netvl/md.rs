@@ -53,6 +53,8 @@ impl<'a> ByteMatcher for &'a [u8] {
 pub trait ByteSliceOps {
     fn trim_left<M: ByteMatcher>(&self, m: M) -> &[u8];
     fn trim_right<M: ByteMatcher>(&self, m: M) -> &[u8];
+    fn trim_left_one<M: ByteMatcher>(&self, m: M) -> &[u8];
+    fn trim_right_one<M: ByteMatcher>(&self, m: M) -> &[u8];
 }
 
 impl<'a> ByteSliceOps for &'a [u8] {
@@ -69,4 +71,21 @@ impl<'a> ByteSliceOps for &'a [u8] {
             Some(idx) => self.slice_to(idx+1)
         }
     }
+
+    #[inline]
+    fn trim_left_one<M: ByteMatcher>(&self, m: M) -> &[u8] {
+        match self.head() {
+            Some(c) if m.matches(c) => self.slice_from(1),
+            _ => self
+        }
+    }
+
+    #[inline]
+    fn trim_right_one<M: ByteMatcher>(&self, m: M) -> &[u8] {
+        match self.last() {
+            Some(c) if m.matches(c) => self.slice_to(self.len()-1),
+            _ => self
+        }
+    }
+
 }
