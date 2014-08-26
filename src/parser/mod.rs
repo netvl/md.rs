@@ -17,6 +17,13 @@ macro_rules! first_of(
     )
 )
 
+macro_rules! one_of(
+    ($c:expr, $p:expr) => ($c == $p);
+    ($c:expr, $p:expr, $($rest:expr),+) => (
+        ($c == $p || one_of!($c, $($rest),+))
+    )
+)
+
 macro_rules! opt_ret_end(
     ($e:expr) => (
         match $e {
@@ -182,13 +189,18 @@ impl<'a> Cursor<'a> {
 
     #[inline]
     fn current_byte(&self) -> Option<u8> {
-        if self.available() { Some(*self) }
+        if self.available() { Some(**self) }
         else { None }
     }
 
     #[inline]
     fn peek_prev(&self) -> u8 {
         self.buf[self.pos.get()-1]
+    }
+
+    #[inline]
+    fn peek_before_prev(&self) -> u8 {
+        self.buf[self.pos.get()-2]
     }
 
     #[inline]
@@ -235,7 +247,7 @@ impl<'a> Cursor<'a> {
         self.buf.slice(pm.pos, self.pos.get())
     }
 
-    #[inlne]
+    #[inline]
     fn slice_until_now_from(&self, pm: PhantomMark) -> &[u8] {
         self.buf.slice(pm.pos, self.pos.get()-1)
     }
@@ -383,7 +395,7 @@ impl<'a> MarkdownParser<'a> {
         Success(())
     }
 
-    fn skip<M: ByteMatcher>(&self, m: M) -> ParseResult<()> {
+    fn skip<M: ByteMatcher>(&self, mut m: M) -> ParseResult<()> {
         if !self.cur.available() { return End }
 
         while {

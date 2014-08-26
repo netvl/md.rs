@@ -1,4 +1,6 @@
-use parser::{MarkdownParser, PhantomMark, Success, End};
+use std::str;
+
+use parser::{MarkdownParser, PhantomMark, Success, End, NoParse};
 use tokens::*;
 use util::CharOps;
 
@@ -21,7 +23,7 @@ impl<'a> EmphasisParser for MarkdownParser<'a> {
             // escaped closing emphasis
             if slice[slice.len()-1] != b' ' {
                 if ec.is_code() {  // this is code inline
-                    return Some(Code(String::from_utf8(slice.to_vec()).unwrap()));
+                    return Some(Code(str::from_utf8(slice).unwrap().into_string()));
                 } else {
                     let subp = MarkdownParser::new(slice);
                     let result = subp.parse_inline();
@@ -147,7 +149,7 @@ impl<'a> Ops<'a> for MarkdownParser<'a> {
                     debug!("read first link part, skipping whitespace");
 
                     // skip whitespace between delimiting braces
-                    parse_or_break!(self.skip_spaces_or_newlines());
+                    parse_or_break!(self.skip_spaces_and_newlines());
                     debug!("skipped whitespace, current char: {}", self.cur.to_ascii());
 
                     // determine closing brace for the second part of the link

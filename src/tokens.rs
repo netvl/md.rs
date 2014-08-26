@@ -50,7 +50,7 @@ pub enum Inline{
     },
 
     ReferenceLink {
-        pub text: String,
+        pub text: Text,
         pub id: String
     }
 

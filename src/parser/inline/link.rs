@@ -1,6 +1,8 @@
-use parser::{MarkdownParser, PhantomMark, Success, End};
+use std::str;
+
+use parser::{MarkdownParser, Success, End, NoParse};
 use tokens::*;
-use util::ByteSliceOps;
+use util::{ByteSliceOps, CharOps};
 
 pub trait LinkParser {
     fn parse_link(&self) -> Option<Inline>;
@@ -8,15 +10,14 @@ pub trait LinkParser {
 
 impl<'a> LinkParser for MarkdownParser<'a> {
     fn parse_link(&self) -> Option<Inline> {
-        let m = self.cur.mark();
         let pm = self.cur.phantom_mark();
         let label;
 
         // find matching closing brace
         let mut escaping = false;
-        let mut level = 1;
+        let mut level = 1u;
         loop {
-            let c = opt_ret!(self.next_byte());
+            let c = opt_ret!(self.cur.next_byte());
             match c {
                 b'\\' => escaping = true,
                 _ if escaping => escaping = false,
@@ -32,12 +33,12 @@ impl<'a> LinkParser for MarkdownParser<'a> {
         label = self.cur.slice_until_now_from(pm);
         
         // if this is shortcut link, we'll return here
-        let m = { m.cancel(); self.cur.mark() };  
+        let m = self.cur.mark();
 
         // TODO: footnote links?
 
         // skip spaces
-        self.skip_spaces_or_newlines();
+        self.skip_spaces_and_newlines();
 
         let mut link = None;
         let mut title = None;
@@ -45,41 +46,41 @@ impl<'a> LinkParser for MarkdownParser<'a> {
 
         match self.cur.current_byte() {
             Some(b'(') => {  // inline link
-                self.next();
-                let pm = self.cur.phantom_mark();
+                self.cur.next();
 
                 // skip initial whitespace
                 parse_or_ret_none!(self.skip_spaces_and_newlines());
+                let pm = self.cur.phantom_mark();
 
                 // read until link end, balancing parentheses
-                let mut level = 0;
+                let mut level = 0u;
                 loop {
-                    let c = opt_ret!(self.next_byte());
+                    let c = opt_ret!(self.cur.next_byte());
                     match c {
-                        b'\\' => self.cur.next(),  // skip escaped byte
+                        b'\\' => { self.cur.next(); },  // skip escaped char
                         b'(' => level += 1,
                         b')' => if level == 0 { break; } else { level -= 1; },
                         // encountered link title
-                        cc if self.cur.peek_prev().is_space() && 
-                              (cc == b'\'' || cc == b'"') => break,
+                        cc if (cc == b'\'' || cc == b'"') &&
+                            self.cur.peek_before_prev().is_space() => break,
                         _ => {}  // just pass through
                     }
                 }
 
                 let link_slice = self.cur.slice_until_now_from(pm);
+                debug!("read link slice: {}", str::from_utf8(link_slice).unwrap());
 
                 // read title, if it is there
                 let pc = self.cur.peek_prev();
-                if pc == '\'' || pc == '\"' {  // title
-                    let qc = pc;
+                if pc == b'\'' || pc == b'\"' {  // title
                     let pm = self.cur.phantom_mark();
 
                     let mut read_title = false;
                     loop {
-                        let c = opt_ret!(self.next_byte());
+                        let c = opt_ret!(self.cur.next_byte());
                         match c {
-                            b'\\' => self.cur.next(),  // skip escaped byte
-                            cc if c == qc && !read_title => {
+                            b'\\' => { self.cur.next(); },  // skip escaped byte
+                            cc if cc == pc && !read_title => {
                                 title = Some(self.cur.slice_until_now_from(pm));
                                 read_title = true;
                             }
@@ -90,7 +91,7 @@ impl<'a> LinkParser for MarkdownParser<'a> {
                 }
                 
                 link = Some(
-                    link_slice.trim_right(|b| b.is_space())
+                    link_slice.trim_right(|b: u8| b.is_space())
                         .trim_left_one(b'<').trim_right_one(b'>')
                 );
 
@@ -98,17 +99,45 @@ impl<'a> LinkParser for MarkdownParser<'a> {
             }
 
             Some(b'[') => {  // reference link
-                self.next();
+                self.cur.next();
                 let pm = self.cur.phantom_mark();
 
                 loop {
-                    let c = opt_ret!(self.next_byte());
-
+                    let c = opt_ret!(self.cur.next_byte());
+                    match c {
+                        b']' => break,
+                        _ => {}
+                    }
                 }
+
+                id = Some(self.cur.slice_until_now_from(pm));
+
+                m.cancel();
             }
 
             _ => {  // shortcut reference link
+                m.reset();  // revert to the first character after ']'
+
+                id = Some(label);
             }
         }
+
+        // TODO: parse link contents
+        let text = vec![Chunk(str::from_utf8(label).unwrap().into_string())];
+
+        let link = match (link, id) {
+            (None, Some(id)) => ReferenceLink {
+                text: text,
+                id: str::from_utf8(id).unwrap().into_string()
+            },
+            (Some(link), None) => InlineLink {
+                text: Some(text),
+                link: str::from_utf8(link).unwrap().to_string(),
+                title: title.map(|s| str::from_utf8(s).unwrap().into_string())
+            },
+            _ => unreachable!()
+        };
+
+        Some(link)
     }
 }

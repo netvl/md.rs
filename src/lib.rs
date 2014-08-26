@@ -6,7 +6,6 @@ extern crate collections;
 pub use tokens::*;
 pub use parser::MarkdownParser;
 
-mod macros;
 mod util;
 
 pub mod tokens;

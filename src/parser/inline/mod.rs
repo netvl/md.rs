@@ -4,9 +4,11 @@ use util::CharOps;
 
 use self::emphasis::EmphasisParser;
 use self::escape::EscapeParser;
+use self::link::LinkParser;
 
 mod emphasis;
 mod escape;
+mod link;
 
 pub trait InlineParser {
     fn parse_inline(&self) -> Text;
@@ -135,6 +137,23 @@ impl<'a> InlineParser for MarkdownParser<'a> {
                             self.cur.advance(n);
                         }
                     }
+                }
+
+                b'[' => {
+                    debug!(">> encountered link start");
+                    s.push_chunk();
+
+                    let m = self.cur.mark();
+                    match self.parse_link() {
+                        Some(link) => {
+                            m.cancel();
+                            s.push_token(link);
+                        }
+                        None => {
+                            m.reset();
+                        }
+                    }
+                    s.update();
                 }
 
                 // just advance

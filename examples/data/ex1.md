@@ -16,6 +16,12 @@ they also handle **code `blocks`inside ``emphasis``**
 
 they ignore _emphasis [in_]   [links]_ yeah
 
+links are [now] (http://parsed)
+
+even with titles [body](  <http://link> 'title')
+
+Wonderful [x]  eee
+
 Setext headers
 also
 ----
