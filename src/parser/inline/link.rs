@@ -125,17 +125,15 @@ impl<'a> LinkParser for MarkdownParser<'a> {
         // TODO: parse link contents
         let text = vec![Chunk(str::from_utf8(label).unwrap().into_string())];
 
-        let link = match (link, id) {
-            (None, Some(id)) => ReferenceLink {
-                text: text,
-                id: str::from_utf8(id).unwrap().into_string()
-            },
-            (Some(link), None) => InlineLink {
-                text: Some(text),
-                link: str::from_utf8(link).unwrap().to_string(),
-                title: title.map(|s| str::from_utf8(s).unwrap().into_string())
-            },
-            _ => unreachable!()
+        let link = link.map(|link| str::from_utf8(link).unwrap().to_string());
+        let id = id.map(|id| str::from_utf8(id).unwrap().into_string());
+        let title = title.map(|title| str::from_utf8(title).unwrap().into_string());
+
+        let link = Link {
+            id: id,
+            link: link,
+            title: title,
+            text: Some(text)
         };
 
         Some(link)

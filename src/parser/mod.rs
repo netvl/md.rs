@@ -106,34 +106,8 @@ macro_rules! ret_on_end(
     )
 )
 
-macro_rules! break_on_end(
-    ($e:expr) => (
-        match $e {
-            End => break,
-            o => o
-        }
-    )
-)
-
 macro_rules! cancel(
     ($m:ident; $r:expr) => ({$m.cancel(); $r})
-)
-
-macro_rules! parse_error(
-    ($s:expr) => (Failure(ParseError(std::str::Slice($s))));
-    ($s:expr, $($arg:expr),+) => (Failure(ParseError(std::str::Owned(format!($s, $($arg),+)))))
-)
-
-macro_rules! try_reset(
-    ($_self:ident; $e:expr) => ({
-        let m = $_self.cur.mark();
-        match $e {
-            NoParse => return NoParse,
-            End => cancel!(m; return End),
-            Success(r) => cancel!(m; r),
-            Failure(e) => cancel!(m; return Failure(e))
-        }
-    })
 )
 
 pub mod config;
