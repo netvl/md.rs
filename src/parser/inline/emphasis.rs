@@ -25,8 +25,8 @@ impl<'a> EmphasisParser for MarkdownParser<'a> {
                 if ec.is_code() {  // this is code inline
                     return Some(Code(str::from_utf8(slice).unwrap().into_string()));
                 } else {
-                    let subp = MarkdownParser::new(slice);
-                    let result = subp.parse_inline();
+                    let subp = self.fork(slice);
+                    let result = self.fix_links(subp.parse_inline());
                     
                     return Some(match n {
                         1 => Emphasis(result),

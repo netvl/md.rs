@@ -58,17 +58,19 @@ pub trait ByteSliceOps<'a> {
     fn trim_right_one<M: ByteMatcher>(&self, m: M) -> &'a [u8];
 }
 
+static EMPTY_SLICE: &'static [u8] = &[];
+
 impl<'a> ByteSliceOps<'a> for &'a [u8] {
     fn trim_left<M: ByteMatcher>(&self, mut m: M) -> &'a [u8] {
         match self.iter().position(|&b| !m.matches(b)) {
-            None => &[],
+            None => EMPTY_SLICE,
             Some(idx) => self.slice_from(idx)
         }
     }
 
     fn trim_right<M: ByteMatcher>(&self, mut m: M) -> &'a [u8] {
         match self.iter().rposition(|&b| !m.matches(b)) {
-            None => &[],
+            None => EMPTY_SLICE,
             Some(idx) => self.slice_to(idx+1)
         }
     }

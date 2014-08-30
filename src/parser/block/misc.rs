@@ -93,8 +93,8 @@ impl<'a> MiscParser for MarkdownParser<'a> {
                 let after_nl_idx = sbuf.rposition_elem(&b'\n').map(|i| i + 1).unwrap_or(0);
                 let head_content = sbuf.slice_from(after_nl_idx);
 
-                let subp = MarkdownParser::new(head_content);
-                let result = subp.parse_inline();
+                let subp = self.fork(head_content);
+                let result = self.fix_links(subp.parse_inline());
 
                 let heading_result = Heading {
                     level: level.to_numeric(),
@@ -112,8 +112,8 @@ impl<'a> MiscParser for MarkdownParser<'a> {
             None => {}
         }
 
-        let subp = MarkdownParser::new(buf);
-        let result = subp.parse_inline();
+        let subp = self.fork(buf);
+        let result = self.fix_links(subp.parse_inline());
 
         Success(Paragraph(result))
     }

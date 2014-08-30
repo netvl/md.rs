@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::cell::{RefCell, Cell};
 
 use collections::Deque;
@@ -258,7 +259,8 @@ impl<'b, 'a> Mark<'b, 'a> {
 pub struct MarkdownParser<'a> {
     cur: Cursor<'a>,
     event_queue: RefCell<RingBuf<Block>>,
-    config: MarkdownConfig
+    config: MarkdownConfig,
+    link_map: Option<LinkMap>
 }
 
 // public methods
@@ -268,7 +270,8 @@ impl<'a> MarkdownParser<'a> {
         MarkdownParser {
             cur: Cursor::new(buffer),
             event_queue: RefCell::new(RingBuf::new()),
-            config: MarkdownConfig::default()
+            config: MarkdownConfig::default(),
+            link_map: Some(HashMap::new())
         }
     }
 
@@ -293,6 +296,15 @@ impl<'a> Iterator<Block> for MarkdownParser<'a> {
 
 // private methods
 impl<'a> MarkdownParser<'a> {
+    fn fork<'b>(&self, buffer: &'b [u8]) -> MarkdownParser<'b> {
+        MarkdownParser {
+            cur: Cursor::new(buffer),
+            event_queue: RefCell::new(RingBuf::new()),
+            config: self.config.clone(),
+            link_map: None
+        }
+    }
+
     fn try_parse_empty_line(&self) -> ParseResult<()> {
         let m = self.cur.mark();
         loop {
@@ -387,10 +399,20 @@ impl<'a> MarkdownParser<'a> {
     }
 
     #[inline]
-    fn skip_spaces(&self) -> ParseResult<()> { self.skip(b' ') }
+    fn skip_spaces(&self) -> ParseResult<()> { 
+        self.skip(b' ')
+    }
 
     #[inline]
-    fn skip_spaces_and_newlines(&self) -> ParseResult<()> { self.skip(&[b' ', b'\n']) }
+    fn skip_spaces_and_newlines(&self) -> ParseResult<()> { 
+        self.skip([b' ', b'\n'].as_slice())
+    }
+
+    #[inline]
+    fn fix_links<F: FixLinks>(&self, mut fl: F) -> F {
+        fl.fix_links_opt(self.link_map.as_ref());
+        fl
+    }
 }
 
 trait CharOps {

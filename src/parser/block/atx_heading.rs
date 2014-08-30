@@ -60,8 +60,8 @@ impl<'a> AtxHeadingParser for MarkdownParser<'a> {
 
         debug!(">> parsing header inline content");
         // parse header contents
-        let subp = MarkdownParser::new(buf.slice_to(n));
-        let result = subp.parse_inline();
+        let subp = self.fork(buf.slice_to(n));
+        let result = self.fix_links(subp.parse_inline());
         debug!(">> parsed: {}", result);
 
         Success(Heading {

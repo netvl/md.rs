@@ -1,3 +1,4 @@
+#[deriving(Clone)]
 pub struct MarkdownConfig {
     pub trim_newlines: bool
 }
