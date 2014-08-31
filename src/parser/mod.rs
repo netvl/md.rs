@@ -419,6 +419,11 @@ impl<'a> MarkdownParser<'a> {
         fl.fix_links_opt(self.link_map.as_ref());
         fl
     }
+
+    #[inline]
+    fn enqueue_event(&self, block: Block) {
+        self.event_queue.borrow_mut().push(block)
+    }
 }
 
 trait CharOps {

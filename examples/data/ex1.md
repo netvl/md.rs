@@ -30,3 +30,20 @@ also
 
 do work
 ====
+
+now blocks 
+support
+## atx heading just after paragraph
+
+as well as
+horizontal rules
+*****
+
+and even
+quotes
+> here
+is a quote
+> with
+>
+> ---
+> horizontal rule

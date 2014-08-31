@@ -1,5 +1,7 @@
 use parser::{MarkdownParser, ParseResult, Success, End, NoParse};
 use tokens::*;
+use parser::block::atx_heading::AtxHeadingParser;
+use parser::block::block_quote::BlockQuoteParser;
 use parser::inline::InlineParser;
 
 pub trait MiscParser {
@@ -60,6 +62,7 @@ impl<'a> MiscParser for MarkdownParser<'a> {
             pm_last = self.cur.phantom_mark();
 
             // empty line means paragraph end
+            debug!(">> trying to parse empty line");
             match self.try_parse_empty_line() {
                 Success(_) | End => break,
                 NoParse => {}
@@ -67,13 +70,45 @@ impl<'a> MiscParser for MarkdownParser<'a> {
 
             // header line means that the paragraph ended, and its last line
             // should be parsed as a heading
+            debug!(">> trying to parse header line");
             match self.try_parse_header_line() {
                 Success(r) => { level = Some(r); break }
                 End => break,  // End is in fact impossible here
                 NoParse => {}
             }
 
-            // TODO: check for atx header, hrule or quote
+            // Check for ATX heading just after the paragraph
+            debug!(">> trying to parse ATX heading");
+            match self.parse_atx_heading() {
+                Success(heading) => {
+                    self.enqueue_event(heading);
+                    break
+                }
+                End => break,   // End is impossible here
+                NoParse => {}
+            }
+
+            // Check for horizontal rule just after the paragraph
+            debug!(">> trying to parse horizontal rule");
+            match self.parse_horizontal_rule() {
+                Success(hrule) => {
+                    self.enqueue_event(hrule);
+                    break
+                }
+                End => break,   // End is impossible here
+                NoParse => {}
+            }
+
+            // Check for block quote just after the paragraph
+            debug!(">> trying to parse block quote");
+            match self.parse_block_quote() {
+                Success(quote) => {
+                    self.enqueue_event(quote);
+                    break
+                }
+                End => break,   // End is impossible here
+                NoParse => {}
+            }
 
             // TODO: lax spacing rules: check for list/html, block/code fence or quote
         }
@@ -106,7 +141,7 @@ impl<'a> MiscParser for MarkdownParser<'a> {
                 if buf.is_empty() {
                     return Success(heading_result);
                 } else {
-                    self.event_queue.borrow_mut().push(heading_result);
+                    self.enqueue_event(heading_result);
                 }
             }
             None => {}
