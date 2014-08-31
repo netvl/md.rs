@@ -5,11 +5,11 @@ use tokens::*;
 use util::{ByteSliceOps, CharOps};
 
 pub trait LinkParser {
-    fn parse_link(&self) -> Option<Inline>;
+    fn parse_link(&self, is_image: bool) -> Option<Inline>;
 }
 
 impl<'a> LinkParser for MarkdownParser<'a> {
-    fn parse_link(&self) -> Option<Inline> {
+    fn parse_link(&self, is_image: bool) -> Option<Inline> {
         let pm = self.cur.phantom_mark();
         let label;
 
@@ -129,11 +129,20 @@ impl<'a> LinkParser for MarkdownParser<'a> {
         let id = id.map(|id| str::from_utf8(id).unwrap().into_string());
         let title = title.map(|title| str::from_utf8(title).unwrap().into_string());
 
-        let link = Link {
-            id: id,
-            link: link,
-            title: title,
-            text: Some(text)
+        let link = if is_image {
+            Image {
+                id: id,
+                link: link,
+                title: title,
+                alt: text
+            }
+        } else {
+            Link {
+                id: id,
+                link: link,
+                title: title,
+                text: Some(text)
+            }
         };
 
         Some(link)

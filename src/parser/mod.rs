@@ -179,6 +179,12 @@ impl<'a> Cursor<'a> {
     }
 
     #[inline]
+    fn peek_before_prev_opt(&self) -> Option<u8> {
+        let pos = self.pos.get();
+        if pos > 1 { Some(self.buf[pos-2]) } else { None }
+    }
+
+    #[inline]
     fn next_byte(&self) -> Option<u8> { 
         if self.available() {
             let r = **self; 

@@ -22,6 +22,8 @@ even with titles [body](  <http://link> 'title')
 
 Wonderful [x]  eee
 
+Images ![alt text] (http://xx) are also ![xx][link] parsed
+
 Setext headers
 also
 ----

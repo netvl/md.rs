@@ -141,10 +141,15 @@ impl<'a> InlineParser for MarkdownParser<'a> {
 
                 b'[' => {
                     debug!(">> encountered link start");
+
+                    let is_image = self.cur.peek_before_prev_opt() == Some(b'!');
+                    if is_image { self.cur.retract(2); s.advance(); }
                     s.push_chunk();
+                    if is_image { self.cur.advance(2); s.update(); }
+
 
                     let m = self.cur.mark();
-                    match self.parse_link() {
+                    match self.parse_link(is_image) {
                         Some(link) => {
                             m.cancel();
                             s.push_token(link);

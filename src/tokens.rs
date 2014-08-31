@@ -12,7 +12,7 @@ pub struct LinkDescription {
     pub title: Option<String>
 }
 
-#[deriving(PartialEq, Eq, Show)]
+#[deriving(PartialEq, Eq, Show, Clone)]
 pub enum Block {
     Heading {
         pub level: uint,
@@ -41,7 +41,7 @@ pub enum Block {
     }
 }
 
-#[deriving(PartialEq, Eq, Show)]
+#[deriving(PartialEq, Eq, Show, Clone)]
 pub enum Inline{
     LineBreak,
 
@@ -55,6 +55,13 @@ pub enum Inline{
 
     Link {
         pub text: Option<Text>,  // None for automatic links
+        pub link: Option<String>,
+        pub title: Option<String>,
+        pub id: Option<String>
+    },
+
+    Image {
+        pub alt: Text,
         pub link: Option<String>,
         pub title: Option<String>,
         pub id: Option<String>
