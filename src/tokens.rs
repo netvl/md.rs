@@ -26,19 +26,18 @@ pub enum Block {
         pub content: String
     },
 
-    OrderedList(Vec<Document>),
+    OrderedList {
+        pub start_index: uint,
+        pub items: Vec<Document>
+    },
 
-    UnorderedList(Vec<Document>),
+    UnorderedList {
+        pub items: Vec<Document>
+    },
 
     Paragraph(Text),
 
-    HorizontalRule,
-
-    LinkDefinition {
-        pub id: String,
-        pub link: String,
-        pub title: Option<String>
-    }
+    HorizontalRule
 }
 
 #[deriving(PartialEq, Eq, Show, Clone)]
@@ -85,7 +84,7 @@ impl FixLinks for Block {
         match *self {
             BlockQuote(ref mut content) => content.fix_links(link_map),
 
-            OrderedList(ref mut items) | UnorderedList(ref mut items) =>
+            OrderedList { ref mut items, .. } | UnorderedList { ref mut items } =>
                 for item in items.mut_iter() {
                     item.fix_links(link_map);
                 },

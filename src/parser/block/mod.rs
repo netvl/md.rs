@@ -28,8 +28,7 @@ impl<'a> BlockParser for MarkdownParser<'a> {
             self.parse_block_code() or
             self.parse_horizontal_rule() or
             self.parse_atx_heading() or
-            self.parse_ordered_list() or
-            self.parse_unordered_list() or
+            self.parse_list() or
             self.parse_paragraph() or
             fail!("programming error, parsing block failed")
         }
