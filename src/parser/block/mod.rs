@@ -30,7 +30,7 @@ impl<'a> BlockParser for MarkdownParser<'a> {
             self.parse_atx_heading() or
             self.parse_list() or
             self.parse_paragraph() or
-            fail!("programming error, parsing block failed")
+            panic!("programming error, parsing block failed")
         }
     }
 }

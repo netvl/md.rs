@@ -14,7 +14,7 @@ pub trait InlineParser {
     fn parse_inline(&self) -> Text;
 }
 
-struct InlineParsingState<'b, 'a> {
+struct InlineParsingState<'b, 'a: 'b> {
     tokens: Vec<Inline>,
     cur: &'b Cursor<'a>,
     config: &'b MarkdownConfig,
@@ -41,7 +41,7 @@ impl<'b, 'a> InlineParsingState<'b, 'a> {
             // remove trailing newlines from chunks
             Chunk(ref mut buf) if self.config.trim_newlines =>
                 while buf.len() > 0 && buf.as_slice().chars().rev().next().unwrap() == '\n' {
-                    buf.pop_char();
+                    buf.pop();
                 },
             _ => {}
         }
@@ -54,7 +54,7 @@ impl<'b, 'a> InlineParsingState<'b, 'a> {
 
         match token {
             Chunk(buf0) => if is_chunk(self.tokens.last()) {
-                match self.tokens.mut_last().unwrap() {
+                match self.tokens.last_mut().unwrap() {
                     &Chunk(ref mut buf) => buf.push_str(buf0.as_slice()),
                     _ => unreachable!()
                 }

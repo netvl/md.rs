@@ -1,6 +1,10 @@
 use parser::{MarkdownParser, ParseResult, Success, End, NoParse};
 use tokens::*;
 
+use self::ListItemInfo::*;
+
+use util::CharOps;
+
 enum ListItemInfo {
     Ordered {
         start: uint
@@ -55,23 +59,23 @@ impl<'a> Ops for MarkdownParser<'a> {
             -> ParseResult<(Document, ListItemInfo)> {
         parse_or_ret!(self.try_skip_initial_spaces());
 
-        match current_item {
-            Ordered { .. } => {}
-            Unordered { marker } => {}
-            Unknown => {
-                match self.parse(|c| c.is_numeric()) {
-                    Success(n) => {
-                        let start: uint = from_str(n).unwrap();
-                        self.parse_list_item_content()
-                            .map(|d| (d, Ordered { start: start }))
-                    }
-                }
-            }
-        }
-        
+        //match current_item {
+            //Ordered { .. } => {}
+            //Unordered { marker } => {}
+            //Unknown => {
+                //match self.parse(|c: u8| c.is_numeric()) {
+                    //Success(n) => {
+                        //let start: uint = from_str(n).unwrap();
+                        //self.parse_list_item_content()
+                            //.map(|d| (d, Ordered { start: start }))
+                    //}
+                //}
+            //}
+        //}
+        unimplemented!()
     }
 
     fn parse_list_item_content(&self) -> ParseResult<Document> {
-        
+        unimplemented!()
     }
 }

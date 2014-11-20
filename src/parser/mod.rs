@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::cell::{RefCell, Cell};
 
-use collections::Deque;
-use collections::ringbuf::RingBuf;
+use collections::ring_buf::RingBuf;
 
 pub use self::config::*;
 use tokens::*;
 
+pub use self::ParseResult::*;
 use self::block::BlockParser;
 
 use util::{CellOps, ByteMatcher};
@@ -219,17 +219,17 @@ impl<'a> Cursor<'a> {
     }
 
     #[inline]
-    fn slice(&self, left: PhantomMark, right: PhantomMark) -> &[u8] {
+    fn slice(&self, left: PhantomMark, right: PhantomMark) -> &'a [u8] {
         self.buf.slice(left.pos, right.pos)
     }
 
     #[inline]
-    fn slice_to_now_from(&self, pm: PhantomMark) -> &[u8] {
+    fn slice_to_now_from(&self, pm: PhantomMark) -> &'a [u8] {
         self.buf.slice(pm.pos, self.pos.get())
     }
 
     #[inline]
-    fn slice_until_now_from(&self, pm: PhantomMark) -> &[u8] {
+    fn slice_until_now_from(&self, pm: PhantomMark) -> &'a [u8] {
         self.buf.slice(pm.pos, self.pos.get()-1)
     }
 }
@@ -239,7 +239,7 @@ struct PhantomMark {
     pos: uint
 }
 
-struct Mark<'b, 'a> {
+struct Mark<'b, 'a: 'b> {
     cur: &'b Cursor<'a>,
     pos: uint,
     cancelled: bool
@@ -387,7 +387,7 @@ impl<'a> MarkdownParser<'a> {
         Success(())
     }
 
-    fn parse<M: ByteMatcher>(&self, mut m: M) -> ParseResult<&'a str> {
+    fn parse<M: ByteMatcher>(&self, mut m: M) -> ParseResult<&'a [u8]> {
         if !self.cur.available() { return End }
 
         let pm = self.cur.phantom_mark();
@@ -405,7 +405,7 @@ impl<'a> MarkdownParser<'a> {
 
             self.cur.available()
         } {}
-        Success(self.cur.slice_until_now_from(pm));
+        Success(self.cur.slice_until_now_from(pm))
     }
 
     fn skip<M: ByteMatcher>(&self, mut m: M) -> ParseResult<()> {
@@ -495,8 +495,8 @@ impl<T> ParseResult<T> {
     fn unwrap(self) -> T {
         match self {
             Success(r) => r,
-            End => fail!("End unwrap"),
-            NoParse => fail!("NoParse unwrap")
+            End => panic!("End unwrap"),
+            NoParse => panic!("NoParse unwrap")
         }
     }
 
@@ -520,7 +520,7 @@ impl<T> ParseResult<T> {
         match self {
             Success(r) => Some(r),
             End => None,
-            NoParse => fail!("programming error, NoParse is converted to result")
+            NoParse => panic!("programming error, NoParse is converted to result")
         }
     }
 }

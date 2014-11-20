@@ -4,6 +4,8 @@ use parser::block::atx_heading::AtxHeadingParser;
 use parser::block::block_quote::BlockQuoteParser;
 use parser::inline::InlineParser;
 
+use self::SetextHeaderLevel::*;
+
 pub trait MiscParser {
     fn parse_horizontal_rule(&self) -> ParseResult<Block>;
     fn parse_paragraph(&self) -> ParseResult<Block>;

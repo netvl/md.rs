@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 
+pub use self::Block::*;
+pub use self::Inline::*;
+
 pub type Document = Vec<Block>;
 
 pub type Text = Vec<Inline>;
@@ -15,24 +18,24 @@ pub struct LinkDescription {
 #[deriving(PartialEq, Eq, Show, Clone)]
 pub enum Block {
     Heading {
-        pub level: uint,
-        pub content: Text
+        level: uint,
+        content: Text
     },
     
     BlockQuote(Document),
 
     BlockCode {
-        pub tag: Option<String>,
-        pub content: String
+        tag: Option<String>,
+        content: String
     },
 
     OrderedList {
-        pub start_index: uint,
-        pub items: Vec<Document>
+        start_index: uint,
+        items: Vec<Document>
     },
 
     UnorderedList {
-        pub items: Vec<Document>
+        items: Vec<Document>
     },
 
     Paragraph(Text),
@@ -53,17 +56,17 @@ pub enum Inline{
     Code(String),
 
     Link {
-        pub text: Option<Text>,  // None for automatic links
-        pub link: Option<String>,
-        pub title: Option<String>,
-        pub id: Option<String>
+        text: Option<Text>,  // None for automatic links
+        link: Option<String>,
+        title: Option<String>,
+        id: Option<String>
     },
 
     Image {
-        pub alt: Text,
-        pub link: Option<String>,
-        pub title: Option<String>,
-        pub id: Option<String>
+        alt: Text,
+        link: Option<String>,
+        title: Option<String>,
+        id: Option<String>
     }
 }
 
@@ -85,7 +88,7 @@ impl FixLinks for Block {
             BlockQuote(ref mut content) => content.fix_links(link_map),
 
             OrderedList { ref mut items, .. } | UnorderedList { ref mut items } =>
-                for item in items.mut_iter() {
+                for item in items.iter_mut() {
                     item.fix_links(link_map);
                 },
 
@@ -99,7 +102,7 @@ impl FixLinks for Block {
 
 impl FixLinks for Document {
     fn fix_links(&mut self, link_map: &LinkMap) {
-        for b in self.mut_iter() {
+        for b in self.iter_mut() {
             b.fix_links(link_map);
         }
     }
@@ -107,7 +110,7 @@ impl FixLinks for Document {
 
 impl FixLinks for Text {
     fn fix_links(&mut self, link_map: &LinkMap) {
-        for i in self.mut_iter() {
+        for i in self.iter_mut() {
             i.fix_links(link_map);
         }
     }
