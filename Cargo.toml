@@ -1,7 +1,12 @@
 [package]
 name = "md"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Vladimir Matveev <vladimir.matweev@gmail.com>"]
+description = "A pure-Rust Markdown parser implementation, CommonMark-compatible"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/netvl/md.rs"
+keywords = ["markdown", "parser"]
 
 [lib]
 name = "md"
