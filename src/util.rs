@@ -14,6 +14,7 @@ pub trait CharOps {
     fn is_emphasis(self) -> bool;
     fn is_code(self) -> bool;
     fn is_space(self) -> bool;
+    fn is_numeric(self) -> bool;
 }
 
 impl CharOps for u8 {
@@ -27,6 +28,11 @@ impl CharOps for u8 {
 
     fn is_space(self) -> bool {
         self == b' ' || self == b'\n'
+    }
+
+    fn is_numeric(self) -> bool {
+        static DIGITS: &'static [u8] = b"0123456789";
+        DIGITS.contains(&self)
     }
 }
 

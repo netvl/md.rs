@@ -387,6 +387,27 @@ impl<'a> MarkdownParser<'a> {
         Success(())
     }
 
+    fn parse<M: ByteMatcher>(&self, mut m: M) -> ParseResult<&'a str> {
+        if !self.cur.available() { return End }
+
+        let pm = self.cur.phantom_mark();
+        while {
+            let c = *self.cur;
+
+            if m.matches(c) {
+                self.cur.next();
+            } else {
+                return (match self.cur.slice_until_now_from(pm) {
+                    s if s.is_empty() => NoParse,
+                    s                 => Success(s)
+                });
+            }
+
+            self.cur.available()
+        } {}
+        Success(self.cur.slice_until_now_from(pm));
+    }
+
     fn skip<M: ByteMatcher>(&self, mut m: M) -> ParseResult<()> {
         if !self.cur.available() { return End }
 
