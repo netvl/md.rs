@@ -1,7 +1,7 @@
 use std::collections::HashMap;
+use std::collections::RingBuf;
 use std::cell::{RefCell, Cell};
-
-use collections::ring_buf::RingBuf;
+use std::ops::Deref;
 
 pub use self::config::*;
 use tokens::*;
@@ -11,48 +11,48 @@ use self::block::BlockParser;
 
 use util::{CellOps, ByteMatcher};
 
-macro_rules! first_of(
+macro_rules! first_of {
     ($e:expr) => ($e);
-    ($e:expr or $f:expr $(or $more:expr)*) => (
-        $e.or_else(|| first_of!($f $(or $more)*))
+    ($e:expr, $($more:expr),+) => (
+        $e.or_else(|| first_of!($($more),*))
     )
-)
+}
 
-macro_rules! one_of(
+macro_rules! one_of {
     ($c:expr, $p:expr) => ($c == $p);
     ($c:expr, $p:expr, $($rest:expr),+) => (
         ($c == $p || one_of!($c, $($rest),+))
     )
-)
+}
 
-macro_rules! opt_ret_end(
+macro_rules! opt_ret_end {
     ($e:expr) => (
         match $e {
             None => return End,
             Some(r) => r
         }
     )
-)
+}
 
-macro_rules! opt_break(
+macro_rules! opt_break {
     ($e:expr) => (
         match $e {
             None => break,
             Some(r) => r
         }
     )
-)
+}
 
-macro_rules! opt_ret(
+macro_rules! opt_ret {
     ($e:expr) => (
         match $e {
             None => return None,
             Some(r) => r
         }
     )
-)
+}
 
-macro_rules! parse_or_ret(
+macro_rules! parse_or_ret {
     ($e:expr) => (
         match $e {
             NoParse => return NoParse,
@@ -60,56 +60,47 @@ macro_rules! parse_or_ret(
             Success(r) => r
         }
     )
-)
+}
 
-macro_rules! parse_or_ret_none(
+macro_rules! parse_or_ret_none {
     ($e:expr) => (
         match $e {
             NoParse | End => return None,
             Success(r) => r
         }
     )
-)
+}
 
-macro_rules! parse_or_break(
+macro_rules! parse_or_break {
     ($e:expr) => (
         match $e {
             NoParse | End => break,
             o => o
         }
     )
-)
+}
 
-macro_rules! break_on_end(
+macro_rules! break_on_end {
     ($e:expr) => (
         match $e {
             End => break,
             o => o
         }
     )
-)
+}
 
-macro_rules! on_end(
-    ($e:expr -> $($a:expr);+) => (
-        match $e {
-            End => { $($a);+ }
-            o => o
-        }
-    )
-)
-
-macro_rules! ret_on_end(
+macro_rules! ret_on_end {
     ($e:expr) => (
         match $e {
             End => return End,
             o => o
         }
     )
-)
+}
 
-macro_rules! cancel(
+macro_rules! cancel {
     ($m:ident; $r:expr) => ({$m.cancel(); $r})
-)
+}
 
 pub mod config;
 
@@ -121,10 +112,12 @@ mod inline;
 
 struct Cursor<'a> {
     buf: &'a [u8],
-    pos: Cell<uint>
+    pos: Cell<usize>
 }
 
-impl<'a> Deref<u8> for Cursor<'a> {
+impl<'a> Deref for Cursor<'a> {
+    type Target = u8;
+
     #[inline]
     fn deref(&self) -> &u8 {
         &self.buf[self.pos.get()]
@@ -144,10 +137,10 @@ impl<'a> Cursor<'a> {
     
     // TODO: rename to unsafe_advance? it does not check for buffer end
     #[inline]
-    fn advance(&self, n: uint) { self.pos.modify(|p| p + n); }
+    fn advance(&self, n: usize) { self.pos.modify(|p| p + n); }
 
     #[inline]
-    fn retract(&self, n: uint) { self.pos.modify(|p| if n > p { 0 } else { p - n }); }
+    fn retract(&self, n: usize) { self.pos.modify(|p| if n > p { 0 } else { p - n }); }
 
     #[inline]
     fn next(&self) -> bool {
@@ -220,28 +213,28 @@ impl<'a> Cursor<'a> {
 
     #[inline]
     fn slice(&self, left: PhantomMark, right: PhantomMark) -> &'a [u8] {
-        self.buf.slice(left.pos, right.pos)
+        &self.buf[left.pos..right.pos]
     }
 
     #[inline]
     fn slice_to_now_from(&self, pm: PhantomMark) -> &'a [u8] {
-        self.buf.slice(pm.pos, self.pos.get())
+        &self.buf[pm.pos..self.pos.get()]
     }
 
     #[inline]
     fn slice_until_now_from(&self, pm: PhantomMark) -> &'a [u8] {
-        self.buf.slice(pm.pos, self.pos.get()-1)
+        &self.buf[pm.pos..self.pos.get()-1]
     }
 }
 
-#[deriving(PartialEq, Eq)]
+#[derive(Copy, PartialEq, Eq)]
 struct PhantomMark {
-    pos: uint
+    pos: usize
 }
 
 struct Mark<'b, 'a: 'b> {
     cur: &'b Cursor<'a>,
-    pos: uint,
+    pos: usize,
     cancelled: bool
 }
 
@@ -288,12 +281,14 @@ impl<'a> MarkdownParser<'a> {
     }
 
     #[inline]
-    pub fn read_all(&mut self) -> Document {
+    pub fn read_all(self) -> Document {
         self.collect()
     }
 }
 
-impl<'a> Iterator<Block> for MarkdownParser<'a> {
+impl<'a> Iterator for MarkdownParser<'a> {
+    type Item = Block;
+
     fn next(&mut self) -> Option<Block> { 
         let front = self.event_queue.borrow_mut().pop_front();
         front.or_else(|| self.parse_block().to_option())
@@ -306,7 +301,7 @@ impl<'a> MarkdownParser<'a> {
         MarkdownParser {
             cur: Cursor::new(buffer),
             event_queue: RefCell::new(RingBuf::new()),
-            config: self.config.clone(),
+            config: self.config,
             link_map: None
         }
     }
@@ -345,7 +340,7 @@ impl<'a> MarkdownParser<'a> {
         }
     }
 
-    fn lookahead_chars(&self, mut n: uint, c: u8) -> bool {
+    fn lookahead_chars(&self, mut n: usize, c: u8) -> bool {
         let _m = self.cur.mark();
         while n > 0 && self.cur.available() {
             match *self.cur {
@@ -397,10 +392,10 @@ impl<'a> MarkdownParser<'a> {
             if m.matches(c) {
                 self.cur.next();
             } else {
-                return (match self.cur.slice_until_now_from(pm) {
+                return match self.cur.slice_until_now_from(pm) {
                     s if s.is_empty() => NoParse,
                     s                 => Success(s)
-                });
+                };
             }
 
             self.cur.available()
@@ -443,7 +438,7 @@ impl<'a> MarkdownParser<'a> {
 
     #[inline]
     fn enqueue_event(&self, block: Block) {
-        self.event_queue.borrow_mut().push(block)
+        self.event_queue.borrow_mut().push_back(block)
     }
 }
 
@@ -475,7 +470,7 @@ enum ParseResult<T> {
 }
 
 impl<T> ParseResult<T> {
-    fn or_else(self, f: || -> ParseResult<T>) -> ParseResult<T> {
+    fn or_else<F>(self, f: F) -> ParseResult<T> where F: FnOnce() -> ParseResult<T> {
         match self {
             Success(r) => Success(r),
             End => End,
@@ -483,7 +478,7 @@ impl<T> ParseResult<T> {
         }
     }
 
-    fn map<U>(self, f: |T| -> U) -> ParseResult<U> {
+    fn map<U, F>(self, f: F) -> ParseResult<U> where F: FnOnce(T) -> U {
         match self {
             Success(r) => Success(f(r)),
             End => End,

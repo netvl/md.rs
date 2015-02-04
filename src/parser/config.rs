@@ -1,4 +1,4 @@
-#[deriving(Clone)]
+#[derive(Copy)]
 pub struct MarkdownConfig {
     pub trim_newlines: bool
 }
@@ -12,8 +12,8 @@ impl MarkdownConfig {
     }
 }
 
-macro_rules! impl_setters(
-    ($target:ty; $($name:ident : $t:ty),+) => ($(
+macro_rules! impl_setters {
+    ($target:ident; $($name:ident : $t:ty),+) => ($(
         impl $target {
             pub fn $name(mut self, value: $t) -> $target {
                 self.$name = value;
@@ -21,7 +21,7 @@ macro_rules! impl_setters(
             }
         }
     )+)
-)
+}
 
 impl_setters! { MarkdownConfig;
     trim_newlines: bool

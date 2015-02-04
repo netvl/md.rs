@@ -55,7 +55,7 @@ impl<'b, 'a> InlineParsingState<'b, 'a> {
         match token {
             Chunk(buf0) => if is_chunk(self.tokens.last()) {
                 match self.tokens.last_mut().unwrap() {
-                    &Chunk(ref mut buf) => buf.push_str(buf0.as_slice()),
+                    &mut Chunk(ref mut buf) => buf.push_str(buf0.as_slice()),
                     _ => unreachable!()
                 }
             } else {
@@ -101,7 +101,7 @@ impl<'a> InlineParser for MarkdownParser<'a> {
         };
 
         loop {
-            debug!(">> cursor positon: {}", self.cur.pos);
+            debug!(">> cursor positon: {}", self.cur.pos.get());
             let c = opt_break!(self.cur.next_byte());
             match c {
                 b'\\' => match break_on_end!(self.parse_escape()).unwrap() {

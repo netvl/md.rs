@@ -11,3 +11,5 @@ keywords = ["markdown", "parser"]
 [lib]
 name = "md"
 
+[dependencies]
+log = "*"

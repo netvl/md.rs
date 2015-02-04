@@ -15,10 +15,10 @@ pub struct LinkDescription {
     pub title: Option<String>
 }
 
-#[deriving(PartialEq, Eq, Show, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Block {
     Heading {
-        level: uint,
+        level: usize,
         content: Text
     },
     
@@ -30,7 +30,7 @@ pub enum Block {
     },
 
     OrderedList {
-        start_index: uint,
+        start_index: usize,
         items: Vec<Document>
     },
 
@@ -43,7 +43,7 @@ pub enum Block {
     HorizontalRule
 }
 
-#[deriving(PartialEq, Eq, Show, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Inline{
     LineBreak,
 
@@ -123,7 +123,7 @@ impl FixLinks for Inline {
                 content.fix_links(link_map),
 
             Link { ref mut link, ref mut title, id: Some(ref id), .. } => {
-                match link_map.find(id) {
+                match link_map.get(id) {
                     Some(ld) => {
                         if link.is_none() {
                             *link = Some(ld.link.clone());

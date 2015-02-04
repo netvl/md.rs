@@ -40,7 +40,7 @@ impl<'a> AtxHeadingParser for MarkdownParser<'a> {
         debug!(">> reading rest of the line");
         self.read_line();
         let buf = self.cur.slice_until_now_from(pm);  // without newline
-        debug!(">> header line: {}", buf);
+        debug!(">> header line: {:?}", buf);
 
         debug!(">> skipping ending hashes and spaces");
         // skip hashes and spaces backwards
@@ -60,9 +60,9 @@ impl<'a> AtxHeadingParser for MarkdownParser<'a> {
 
         debug!(">> parsing header inline content");
         // parse header contents
-        let subp = self.fork(buf.slice_to(n));
+        let subp = self.fork(&buf[..n]);
         let result = self.fix_links(subp.parse_inline());
-        debug!(">> parsed: {}", result);
+        debug!(">> parsed: {:?}", result);
 
         Success(Heading {
             level: level,

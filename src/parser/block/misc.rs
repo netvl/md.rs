@@ -1,3 +1,5 @@
+use std::num::FromPrimitive;
+
 use parser::{MarkdownParser, ParseResult, Success, End, NoParse};
 use tokens::*;
 use parser::block::atx_heading::AtxHeadingParser;
@@ -12,7 +14,7 @@ pub trait MiscParser {
 }
 
 #[repr(u8)]
-#[deriving(FromPrimitive)]
+#[derive(Copy, FromPrimitive)]
 enum SetextHeaderLevel {
     StxFirst = b'=',
     StxSecond = b'-'
@@ -20,7 +22,7 @@ enum SetextHeaderLevel {
 
 impl SetextHeaderLevel {
     #[inline]
-    fn to_numeric(self) -> uint {
+    fn to_numeric(self) -> usize {
         match self {
             StxFirst => 1,
             StxSecond => 2
@@ -124,11 +126,11 @@ impl<'a> MiscParser for MarkdownParser<'a> {
                 debug!("found setext header of level {}", level.to_numeric());
 
                 // ignore last newline which is always there
-                let sbuf = if buf.ends_with(b"\n") { buf.slice_to(buf.len()-1) } else { buf };
+                let sbuf = if buf.ends_with(b"\n") { &buf[..buf.len()-1] } else { buf };
 
                 // last newline or start of the block
                 let after_nl_idx = sbuf.rposition_elem(&b'\n').map(|i| i + 1).unwrap_or(0);
-                let head_content = sbuf.slice_from(after_nl_idx);
+                let head_content = &sbuf[after_nl_idx..];
 
                 let subp = self.fork(head_content);
                 let result = self.fix_links(subp.parse_inline());
@@ -138,7 +140,7 @@ impl<'a> MiscParser for MarkdownParser<'a> {
                     content: result
                 };
 
-                buf = buf.slice_to(after_nl_idx);
+                buf = &buf[..after_nl_idx];
 
                 if buf.is_empty() {
                     return Success(heading_result);
@@ -169,7 +171,7 @@ impl<'a> Ops for MarkdownParser<'a> {
             Some(_) => return NoParse,
             None => return End
         };
-        let level = FromPrimitive::from_u8(cc).unwrap();  // unwrap is safe due to check above
+        let level = FromPrimitive::from_u8(cc).unwrap();  // unwrap is safe due to the check above
 
         loop {
             match self.cur.next_byte() {

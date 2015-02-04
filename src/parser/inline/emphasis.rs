@@ -1,4 +1,5 @@
 use std::str;
+use std::borrow::ToOwned;
 
 use parser::{MarkdownParser, PhantomMark, Success, End, NoParse};
 use tokens::*;
@@ -7,12 +8,12 @@ use util::CharOps;
 use super::InlineParser;
 
 pub trait EmphasisParser {
-    fn parse_emphasis(&self, ec: u8, n: uint) -> Option<Inline>;
+    fn parse_emphasis(&self, ec: u8, n: usize) -> Option<Inline>;
 }
 
 impl<'a> EmphasisParser for MarkdownParser<'a> {
-    fn parse_emphasis(&self, ec: u8, n: uint) -> Option<Inline> {
-        debug!("reading emphasis, char [{}], n = {}", ec.to_ascii(), n);
+    fn parse_emphasis(&self, ec: u8, n: usize) -> Option<Inline> {
+        debug!("reading emphasis, char [{}], n = {}", ec as char, n);
         let pm = self.cur.phantom_mark();
         loop {
             // a marker over the first character of closing emphasis
@@ -23,7 +24,7 @@ impl<'a> EmphasisParser for MarkdownParser<'a> {
             // escaped closing emphasis
             if slice[slice.len()-1] != b' ' {
                 if ec.is_code() {  // this is code inline
-                    return Some(Code(str::from_utf8(slice).unwrap().into_string()));
+                    return Some(Code(str::from_utf8(slice).unwrap().to_owned()));
                 } else {
                     let subp = self.fork(slice);
                     let result = self.fix_links(subp.parse_inline());
@@ -40,23 +41,23 @@ impl<'a> EmphasisParser for MarkdownParser<'a> {
 }
 
 trait Ops<'a> {
-    fn until_emph_closing(&self, ec: u8, n: uint) -> Option<PhantomMark>;
+    fn until_emph_closing(&self, ec: u8, n: usize) -> Option<PhantomMark>;
 }
 
 impl<'a> Ops<'a> for MarkdownParser<'a> {
-    fn until_emph_closing(&self, ec: u8, n: uint) -> Option<PhantomMark> {
+    fn until_emph_closing(&self, ec: u8, n: usize) -> Option<PhantomMark> {
         assert!(n > 0);  // need at least one emphasis character
 
         let pm = self.cur.phantom_mark();
         let mut pm_last = pm;
         let mut escaping = false;
 
-        macro_rules! advance(
+        macro_rules! advance {
             () => (pm_last = self.cur.phantom_mark())
-        )
-        macro_rules! retract(
+        }
+        macro_rules! retract {
             () => (pm_last = pm)
-        )
+        }
 
         'outer: loop {
             let c = match self.cur.next_byte() {
@@ -101,7 +102,7 @@ impl<'a> Ops<'a> for MarkdownParser<'a> {
                 // we need to pass through this block as is
                 c if c == b'`' => {
                     // count `s
-                    let mut sn = 1u;
+                    let mut sn = 1us;
                     while break_on_end!(self.try_read_char(b'`')).is_success() {
                         sn += 1;
                     }
@@ -150,7 +151,7 @@ impl<'a> Ops<'a> for MarkdownParser<'a> {
 
                     // skip whitespace between delimiting braces
                     parse_or_break!(self.skip_spaces_and_newlines());
-                    debug!("skipped whitespace, current char: {}", self.cur.to_ascii());
+                    debug!("skipped whitespace, current char: {}", *self.cur as char);
 
                     // determine closing brace for the second part of the link
                     let cc = match *self.cur {
@@ -160,7 +161,7 @@ impl<'a> Ops<'a> for MarkdownParser<'a> {
                     };
                     self.cur.next();
 
-                    debug!("expected closing character is {}, skipping rest of the link", cc.to_ascii());
+                    debug!("expected closing character is {}, skipping rest of the link", cc as char);
                     // skip second part of the link
                     loop {
                         match self.cur.next_byte() {

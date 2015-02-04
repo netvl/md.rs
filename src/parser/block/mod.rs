@@ -24,12 +24,12 @@ impl<'a> BlockParser for MarkdownParser<'a> {
         while ret_on_end!(self.try_parse_empty_line()).is_success() {}
 
         first_of! {
-            self.parse_block_quote() or
-            self.parse_block_code() or
-            self.parse_horizontal_rule() or
-            self.parse_atx_heading() or
-            self.parse_list() or
-            self.parse_paragraph() or
+            self.parse_block_quote(),
+            self.parse_block_code(),
+            self.parse_horizontal_rule(),
+            self.parse_atx_heading(),
+            self.parse_list(),
+            self.parse_paragraph(),
             panic!("programming error, parsing block failed")
         }
     }

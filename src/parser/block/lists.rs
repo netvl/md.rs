@@ -5,9 +5,10 @@ use self::ListItemInfo::*;
 
 use util::CharOps;
 
+#[derive(Copy)]
 enum ListItemInfo {
     Ordered {
-        start: uint
+        start: usize
     }, 
     Unordered {
         marker: u8
@@ -65,7 +66,7 @@ impl<'a> Ops for MarkdownParser<'a> {
             //Unknown => {
                 //match self.parse(|c: u8| c.is_numeric()) {
                     //Success(n) => {
-                        //let start: uint = from_str(n).unwrap();
+                        //let start: usize = from_str(n).unwrap();
                         //self.parse_list_item_content()
                             //.map(|d| (d, Ordered { start: start }))
                     //}

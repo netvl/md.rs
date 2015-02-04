@@ -11,7 +11,7 @@ trait Ops {
 
 impl<'a> Ops for MarkdownParser<'a> {
     fn block_code_prefix(&self) -> ParseResult<()> {
-        let mut n = 0u;
+        let mut n = 0us;
         let m = self.cur.mark();
         loop {
             if n == 4 { break };

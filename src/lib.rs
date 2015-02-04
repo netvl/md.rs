@@ -1,7 +1,6 @@
-#![feature(globs, macro_rules, phase, unsafe_destructor)]
+#![feature(unsafe_destructor, core, collections)]
 
-#[phase(plugin, link)] extern crate log;
-extern crate collections;
+#[macro_use] extern crate log;
 
 pub use tokens::*;
 pub use parser::MarkdownParser;

@@ -7,11 +7,11 @@ pub trait EscapeParser {
 
 impl<'a> EscapeParser for MarkdownParser<'a> {
     fn parse_escape(&self) -> ParseResult<Option<Inline>> {
-        static ESCAPE_CHARS: &'static [u8] = b"\\`*_{}[]()#+-.!:|&<>^~";
+        const ESCAPE_CHARS: &'static [u8] = b"\\`*_{}[]()#+-.!:|&<>^~";
 
         match self.cur.next_byte() {
             Some(c) if ESCAPE_CHARS.contains(&c) => 
-                Success(Some(Chunk([c.to_ascii()].as_str_ascii().to_string()))),
+                Success(Some(Chunk(String::from_utf8(vec![c]).unwrap()))),
             Some(_) => Success(None),
             None => End
         }

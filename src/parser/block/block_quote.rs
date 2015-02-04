@@ -45,7 +45,7 @@ impl<'a> BlockQuoteParser for MarkdownParser<'a> {
             }
         }
 
-        let mut subp = self.fork(buf.as_slice());
+        let subp = self.fork(buf.as_slice());
         let result = self.fix_links(subp.read_all());
 
         Success(BlockQuote(result))

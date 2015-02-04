@@ -1,4 +1,5 @@
 use std::str;
+use std::borrow::ToOwned;
 
 use parser::{MarkdownParser, Success, End, NoParse};
 use tokens::*;
@@ -15,7 +16,7 @@ impl<'a> LinkParser for MarkdownParser<'a> {
 
         // find matching closing brace
         let mut escaping = false;
-        let mut level = 1u;
+        let mut level = 1us;
         loop {
             let c = opt_ret!(self.cur.next_byte());
             match c {
@@ -53,7 +54,7 @@ impl<'a> LinkParser for MarkdownParser<'a> {
                 let pm = self.cur.phantom_mark();
 
                 // read until link end, balancing parentheses
-                let mut level = 0u;
+                let mut level = 0us;
                 loop {
                     let c = opt_ret!(self.cur.next_byte());
                     match c {
@@ -123,11 +124,11 @@ impl<'a> LinkParser for MarkdownParser<'a> {
         }
 
         // TODO: parse link contents
-        let text = vec![Chunk(str::from_utf8(label).unwrap().into_string())];
+        let text = vec![Chunk(str::from_utf8(label).unwrap().to_owned())];
 
-        let link = link.map(|link| str::from_utf8(link).unwrap().to_string());
-        let id = id.map(|id| str::from_utf8(id).unwrap().into_string());
-        let title = title.map(|title| str::from_utf8(title).unwrap().into_string());
+        let link = link.map(|link| str::from_utf8(link).unwrap().to_owned());
+        let id = id.map(|id| str::from_utf8(id).unwrap().to_owned());
+        let title = title.map(|title| str::from_utf8(title).unwrap().to_owned());
 
         let link = if is_image {
             Image {
