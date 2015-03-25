@@ -3,8 +3,6 @@ use tokens::*;
 
 use self::ListItemInfo::*;
 
-use util::CharOps;
-
 #[derive(Copy)]
 enum ListItemInfo {
     Ordered {

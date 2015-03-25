@@ -16,7 +16,7 @@ impl<'a> LinkParser for MarkdownParser<'a> {
 
         // find matching closing brace
         let mut escaping = false;
-        let mut level = 1us;
+        let mut level = 1usize;
         loop {
             let c = opt_ret!(self.cur.next_byte());
             match c {
@@ -54,7 +54,7 @@ impl<'a> LinkParser for MarkdownParser<'a> {
                 let pm = self.cur.phantom_mark();
 
                 // read until link end, balancing parentheses
-                let mut level = 0us;
+                let mut level = 0usize;
                 loop {
                     let c = opt_ret!(self.cur.next_byte());
                     match c {
