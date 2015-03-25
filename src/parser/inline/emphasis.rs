@@ -40,7 +40,7 @@ impl<'a> EmphasisParser for MarkdownParser<'a> {
     }
 }
 
-trait Ops<'a> {
+trait Ops<'a>: ::std::marker::PhantomFn<&'a ()> {
     fn until_emph_closing(&self, ec: u8, n: usize) -> Option<PhantomMark>;
 }
 
