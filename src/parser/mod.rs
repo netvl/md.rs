@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::collections::RingBuf;
+use std::collections::VecDeque;
 use std::cell::{RefCell, Cell};
 use std::ops::Deref;
 
@@ -257,7 +257,7 @@ impl<'b, 'a> Mark<'b, 'a> {
 
 pub struct MarkdownParser<'a> {
     cur: Cursor<'a>,
-    event_queue: RefCell<RingBuf<Block>>,
+    event_queue: RefCell<VecDeque<Block>>,
     config: MarkdownConfig,
     link_map: Option<LinkMap>
 }
@@ -268,7 +268,7 @@ impl<'a> MarkdownParser<'a> {
     pub fn new(buffer: &[u8]) -> MarkdownParser {
         MarkdownParser {
             cur: Cursor::new(buffer),
-            event_queue: RefCell::new(RingBuf::new()),
+            event_queue: RefCell::new(VecDeque::new()),
             config: MarkdownConfig::default(),
             link_map: Some(HashMap::new())
         }
@@ -300,7 +300,7 @@ impl<'a> MarkdownParser<'a> {
     fn fork<'b>(&self, buffer: &'b [u8]) -> MarkdownParser<'b> {
         MarkdownParser {
             cur: Cursor::new(buffer),
-            event_queue: RefCell::new(RingBuf::new()),
+            event_queue: RefCell::new(VecDeque::new()),
             config: self.config,
             link_map: None
         }

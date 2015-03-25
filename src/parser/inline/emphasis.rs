@@ -40,7 +40,7 @@ impl<'a> EmphasisParser for MarkdownParser<'a> {
     }
 }
 
-trait Ops<'a> {
+trait Ops<'a>: ::std::marker::PhantomFn<&'a ()> {
     fn until_emph_closing(&self, ec: u8, n: usize) -> Option<PhantomMark>;
 }
 
@@ -102,7 +102,7 @@ impl<'a> Ops<'a> for MarkdownParser<'a> {
                 // we need to pass through this block as is
                 c if c == b'`' => {
                     // count `s
-                    let mut sn = 1us;
+                    let mut sn = 1usize;
                     while break_on_end!(self.try_read_char(b'`')).is_success() {
                         sn += 1;
                     }
