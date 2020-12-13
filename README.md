@@ -1,6 +1,10 @@
 md.rs: Markdown parser in Rust
 ==============================
 
+**Unmaintained and unfinished: please use maintained alternatives like [pulldown-cmark](https://crates.io/crates/pulldown-cmark) instead.**
+
+---
+
 `md.rs` is intended to be a simple Markdown parser in Rust. It will provide token-based stream parser capabilities.
 
 How to build
